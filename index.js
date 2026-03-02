@@ -136,31 +136,6 @@ cron.schedule("0 0 * * *", () => {
    COMMANDS
 ===================================================== */
 
-bot.onText(/\/balance/, (msg) => {
-  try {
-    const balances = getBalances();
-    if (!balances.length) {
-      return bot.sendMessage(msg.chat.id, "No transactions yet.");
-    }
-
-    let output = "📊 Account Balances\n\n";
-    let currentType = null;
-
-    balances.forEach(b => {
-      if (b.type !== currentType) {
-        currentType = b.type;
-        output += `\n${currentType.toUpperCase()}\n`;
-      }
-      output += `  ${b.account} : ${b.balance}\n`;
-    });
-
-    bot.sendMessage(msg.chat.id, output);
-  } catch (err) {
-    console.error(err);
-    bot.sendMessage(msg.chat.id, "Error retrieving balances.");
-  }
-});
-
 bot.onText(/\/income/, (msg) => {
   try {
     const rows = getIncomeStatement();
@@ -349,6 +324,10 @@ bot.onText(/\/forecast/, async (msg) => {
   }
 });
 
+/*  ===================================================
+ *  HYBRID
+    ================================================== */  
+
 bot.onText(/\/hybrid/, async (msg) => {
   try {
     const balances = await getBalances();
@@ -431,5 +410,417 @@ bot.onText(/\/hybrid/, async (msg) => {
   } catch (err) {
     console.error("Hybrid error:", err);
     return bot.sendMessage(msg.chat.id, "Error calculating hybrid forecast.");
+  }
+});
+
+/* =====================================================
+   STRESS TEST
+   Usage: /stress 100
+===================================================== */
+
+bot.onText(/\/stress (.+)/, async (msg, match) => {
+  try {
+    const stressAmount = Number(match[1]);
+
+    if (isNaN(stressAmount) || stressAmount <= 0) {
+      return bot.sendMessage(msg.chat.id, "Usage: /stress 100");
+    }
+
+    const balances = await getBalances();
+    const recurring = await getRecurringTransactions();
+    const totals = await getLast30DayIncomeAndExpenses();
+
+    // 1️⃣ Liquid assets
+    let liquidAssets = 0;
+
+    for (const b of balances) {
+      if (b.account.startsWith("assets:bank")) {
+        liquidAssets += Number(b.balance) || 0;
+      }
+    }
+
+    // 2️⃣ Recent burn
+    let income = 0;
+    let expenses = 0;
+
+    for (const r of totals) {
+      if (r.type === "income") income += Number(r.total) || 0;
+      if (r.type === "expenses") expenses += Number(r.total) || 0;
+    }
+
+    const recentBurn = expenses - income;
+
+    // 3️⃣ Recurring impact
+    let recurringImpact = 0;
+
+    for (const r of recurring) {
+      const multiplier = {
+        daily: 30,
+        weekly: 4.33,
+        monthly: 1,
+        yearly: 1 / 12
+      }[r.frequency] || 1;
+
+      const amount = (Number(r.amount) || 0) * multiplier;
+
+      if (r.debit_account?.startsWith("assets:bank")) {
+        recurringImpact += amount;
+      }
+
+      if (r.credit_account?.startsWith("assets:bank")) {
+        recurringImpact -= amount;
+      }
+    }
+
+    // 4️⃣ Apply stress
+    const stressedNet = recurringImpact - recentBurn - stressAmount;
+
+    liquidAssets = Number(liquidAssets.toFixed(2));
+
+    // PROFIT CASE
+    if (stressedNet >= 0) {
+      return bot.sendMessage(
+        msg.chat.id,
+        `🧪 Stress Test (+${stressAmount}/month)\n\n` +
+        `Projected Monthly Net After Stress: +${stressedNet.toFixed(2)}\n` +
+        `🏦 Liquid Assets: ${liquidAssets}\n\n` +
+        `Runway: ∞`
+      );
+    }
+
+    const burn = Math.abs(stressedNet);
+    const months = liquidAssets / burn;
+
+    const depletionDate = new Date();
+    depletionDate.setMonth(depletionDate.getMonth() + Math.floor(months));
+
+    return bot.sendMessage(
+      msg.chat.id,
+      `🧪 Stress Test (+${stressAmount}/month)\n\n` +
+      `Projected Monthly Net After Stress: -${burn.toFixed(2)}\n` +
+      `🏦 Liquid Assets: ${liquidAssets}\n\n` +
+      `⏳ ${months.toFixed(1)} months remaining\n` +
+      `📅 ${depletionDate.toISOString().slice(0, 10)}`
+    );
+
+  } catch (err) {
+    console.error("Stress error:", err);
+    return bot.sendMessage(msg.chat.id, "Error running stress test.");
+  }
+});
+
+/* =====================================================
+   RAISE SIMULATION
+   Usage: /raise 500
+===================================================== */
+
+bot.onText(/\/raise (.+)/, async (msg, match) => {
+  try {
+    const raiseAmount = Number(match[1]);
+
+    if (isNaN(raiseAmount) || raiseAmount <= 0) {
+      return bot.sendMessage(msg.chat.id, "Usage: /raise 500");
+    }
+
+    const balances = await getBalances();
+    const recurring = await getRecurringTransactions();
+    const totals = await getLast30DayIncomeAndExpenses();
+
+    let liquidAssets = 0;
+
+    for (const b of balances) {
+      if (b.account.startsWith("assets:bank")) {
+        liquidAssets += Number(b.balance) || 0;
+      }
+    }
+
+    let income = 0;
+    let expenses = 0;
+
+    for (const r of totals) {
+      if (r.type === "income") income += Number(r.total) || 0;
+      if (r.type === "expenses") expenses += Number(r.total) || 0;
+    }
+
+    const recentBurn = expenses - income;
+
+    let recurringImpact = 0;
+
+    for (const r of recurring) {
+      const multiplier = {
+        daily: 30,
+        weekly: 4.33,
+        monthly: 1,
+        yearly: 1 / 12
+      }[r.frequency] || 1;
+
+      const amount = (Number(r.amount) || 0) * multiplier;
+
+      if (r.debit_account?.startsWith("assets:bank")) {
+        recurringImpact += amount;
+      }
+
+      if (r.credit_account?.startsWith("assets:bank")) {
+        recurringImpact -= amount;
+      }
+    }
+
+    const improvedNet = recurringImpact - recentBurn + raiseAmount;
+
+    if (improvedNet >= 0) {
+      return bot.sendMessage(
+        msg.chat.id,
+        `📈 Raise Simulation (+${raiseAmount}/month)\n\n` +
+        `New Projected Monthly Net: +${improvedNet.toFixed(2)}\n` +
+        `🏦 Liquid Assets: ${liquidAssets}\n\n` +
+        `Runway: ∞`
+      );
+    }
+
+    const burn = Math.abs(improvedNet);
+    const months = liquidAssets / burn;
+
+    const depletionDate = new Date();
+    depletionDate.setMonth(depletionDate.getMonth() + Math.floor(months));
+
+    return bot.sendMessage(
+      msg.chat.id,
+      `📈 Raise Simulation (+${raiseAmount}/month)\n\n` +
+      `New Projected Monthly Net: -${burn.toFixed(2)}\n` +
+      `🏦 Liquid Assets: ${liquidAssets}\n\n` +
+      `⏳ ${months.toFixed(1)} months remaining\n` +
+      `📅 ${depletionDate.toISOString().slice(0, 10)}`
+    );
+
+  } catch (err) {
+    console.error("Raise error:", err);
+    return bot.sendMessage(msg.chat.id, "Error running raise simulation.");
+  }
+});
+
+/* =====================================================
+   SHOCK SIMULATION (With Impact Delta)
+   Usage: /shock 1200
+===================================================== */
+
+bot.onText(/\/shock (.+)/, async (msg, match) => {
+  try {
+    const shockAmount = Number(match[1]);
+
+    if (isNaN(shockAmount) || shockAmount <= 0) {
+      return bot.sendMessage(msg.chat.id, "Usage: /shock 1200");
+    }
+
+    const balances = await getBalances();
+    const totals = await getLast30DayIncomeAndExpenses();
+
+    let liquidAssets = 0;
+
+    for (const b of balances) {
+      if (b.account.startsWith("assets:bank")) {
+        liquidAssets += Number(b.balance) || 0;
+      }
+    }
+
+    let income = 0;
+    let expenses = 0;
+
+    for (const r of totals) {
+      if (r.type === "income") income += Number(r.total) || 0;
+      if (r.type === "expenses") expenses += Number(r.total) || 0;
+    }
+
+    const monthlyBurn = expenses - income;
+
+    // BEFORE runway
+    let beforeRunway = Infinity;
+
+    if (monthlyBurn > 0) {
+      beforeRunway = liquidAssets / monthlyBurn;
+    }
+
+    // Apply shock
+    const newLiquidAssets = liquidAssets - shockAmount;
+
+    if (newLiquidAssets <= 0) {
+      return bot.sendMessage(
+        msg.chat.id,
+        `💥 Shock Event (-${shockAmount})\n\n` +
+        `Liquidity exhausted immediately.\n` +
+        `Impact: -${beforeRunway.toFixed(1)} months of runway`
+      );
+    }
+
+    // AFTER runway
+    let afterRunway = Infinity;
+
+    if (monthlyBurn > 0) {
+      afterRunway = newLiquidAssets / monthlyBurn;
+    }
+
+    const impactMonths =
+      beforeRunway === Infinity
+        ? 0
+        : beforeRunway - afterRunway;
+
+    if (monthlyBurn <= 0) {
+      return bot.sendMessage(
+        msg.chat.id,
+        `💥 Shock Event (-${shockAmount})\n\n` +
+        `Before Shock: Profitable (∞ runway)\n` +
+        `After Shock: Profitable (∞ runway)\n\n` +
+        `🏦 New Liquid Assets: ${newLiquidAssets.toFixed(2)}`
+      );
+    }
+
+    return bot.sendMessage(
+      msg.chat.id,
+      `💥 Shock Event (-${shockAmount})\n\n` +
+      `Before Shock:\n` +
+      `  Liquid Assets: ${liquidAssets.toFixed(2)}\n` +
+      `  Runway: ${beforeRunway.toFixed(1)} months\n\n` +
+      `After Shock:\n` +
+      `  Liquid Assets: ${newLiquidAssets.toFixed(2)}\n` +
+      `  Runway: ${afterRunway.toFixed(1)} months\n\n` +
+      `📉 Impact: -${impactMonths.toFixed(1)} months`
+    );
+
+  } catch (err) {
+    console.error("Shock error:", err);
+    return bot.sendMessage(msg.chat.id, "Error running shock simulation.");
+  }
+});
+
+/* ==================================================
+ * STATUS
+   ================================================== */
+
+bot.onText(/^\/status(@\w+)?$/, async (msg) => {
+  try {
+    const balances = await getBalances();
+    const totals = await getLast30DayIncomeAndExpenses();
+
+    let liquidAssets = 0;
+
+    for (const b of balances) {
+      if (b.account.startsWith("assets:bank")) {
+        liquidAssets += Number(b.balance) || 0;
+      }
+    }
+
+    let income = 0;
+    let expenses = 0;
+
+    for (const r of totals) {
+      if (r.type === "income") income += Number(r.total) || 0;
+      if (r.type === "expenses") expenses += Number(r.total) || 0;
+    }
+
+    const monthlyNet = income - expenses;
+
+    let runway = Infinity;
+
+    if (monthlyNet < 0) {
+      runway = liquidAssets / Math.abs(monthlyNet);
+    }
+
+    const runwayText =
+      runway === Infinity
+        ? "∞ (Profitable)"
+        : `${runway.toFixed(1)} months`;
+
+    return bot.sendMessage(
+      msg.chat.id,
+      `📊 Financial Status\n\n` +
+      `🏦 Liquid Assets: ${liquidAssets.toFixed(2)}\n` +
+      `📈 Monthly Income: ${income.toFixed(2)}\n` +
+      `📉 Monthly Expenses: ${expenses.toFixed(2)}\n` +
+      `💰 Monthly Net: ${monthlyNet.toFixed(2)}\n\n` +
+      `⏳ Runway: ${runwayText}`
+    );
+
+  } catch (err) {
+    console.error("Status error:", err);
+    return bot.sendMessage(msg.chat.id, "Error retrieving status.");
+  }
+});
+
+/* =====================================================
+   BALANCE (INTERNAL)
+===================================================== */
+
+bot.onText(/^\/balance(@\w+)?$/, async (msg) => {
+  try {
+    const balances = await getBalances();
+
+    if (!balances.length) {
+      return bot.sendMessage(msg.chat.id, "No balances found.");
+    }
+
+    let output = "📊 Account Balances\n\n";
+
+    let total = 0;
+
+    for (const b of balances) {
+      const amount = Number(b.balance) || 0;
+      total += amount;
+
+      output += `${b.account}: ${amount.toFixed(2)}\n`;
+    }
+
+    output += `\nNet Total: ${total.toFixed(2)}`;
+
+    return bot.sendMessage(msg.chat.id, output);
+
+  } catch (err) {
+    console.error("Balance error:", err);
+    return bot.sendMessage(msg.chat.id, "Error retrieving balances.");
+  }
+});
+
+/* =====================================================
+   AI MESSAGE HANDLER (CHAT + ACCOUNTING MODE)
+===================================================== */
+
+bot.on("message", async (msg) => {
+  try {
+    if (!msg.text) return;
+
+    // Ignore slash commands (they are handled above)
+    if (msg.text.startsWith("/")) return;
+
+    const completion = await openai.chat.completions.create({
+      model: "openai/gpt-4o-mini", // change if needed
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: msg.text }
+      ],
+      temperature: 0.2
+    });
+
+    const reply = completion.choices[0].message.content.trim();
+
+    // Try to parse JSON (Accounting Mode)
+    try {
+      const parsed = JSON.parse(reply);
+
+      if (parsed.postings && Array.isArray(parsed.postings)) {
+        addTransaction(parsed);
+        return bot.sendMessage(
+          msg.chat.id,
+          `✅ Transaction recorded:\n${parsed.description}`
+        );
+      }
+
+    } catch (jsonErr) {
+      // Not JSON → Chat mode
+    }
+
+    // Chat mode fallback
+    return bot.sendMessage(msg.chat.id, reply);
+
+  } catch (err) {
+    console.error("AI error:", err);
+    return bot.sendMessage(msg.chat.id, "AI error.");
   }
 });
