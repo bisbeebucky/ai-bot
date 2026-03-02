@@ -276,82 +276,10 @@ bot.onText(/\/runway/, (msg) => {
   }
 });
 
-/* ==================================================
- * FORECAST
-   ================================================== */
-bot.onText(/\/forecast/, (msg) => {
-  try {
-    const balances = getBalances();
-    const recurring = getRecurringTransactions();
-
-    // 1️⃣ Get liquid assets
-    let liquidAssets = 0;
-
-    balances.forEach(b => {
-      if (b.account.startsWith("assets:bank")) {
-        liquidAssets += b.balance;
-      }
-    });
-
-    // 2️⃣ Calculate monthly recurring impact on liquid assets
-    let monthlyImpact = 0;
-
-    recurring.forEach(r => {
-      let multiplier = 1;
-
-      if (r.frequency === "daily") multiplier = 30;
-      if (r.frequency === "weekly") multiplier = 4.33;
-      if (r.frequency === "monthly") multiplier = 1;
-      if (r.frequency === "yearly") multiplier = 1 / 12;
-
-      const amount = r.amount * multiplier;
-
-      // ✅ CORRECT ACCOUNTING LOGIC
-
-      // Debit to bank = money IN (asset increases)
-      if (r.debit_account.startsWith("assets:bank")) {
-        monthlyImpact += amount;
-      }
-
-      // Credit to bank = money OUT (asset decreases)
-      if (r.credit_account.startsWith("assets:bank")) {
-        monthlyImpact -= amount;
-      }
-    });
-
-    // 3️⃣ If positive or zero → infinite runway
-    if (monthlyImpact >= 0) {
-      return bot.sendMessage(
-        msg.chat.id,
-        `🔮 Predictive Runway\n\n` +
-        `Monthly Recurring Net: +${monthlyImpact.toFixed(2)}\n` +
-        `Liquid Assets: ${liquidAssets}\n\n` +
-        `Runway: ∞`
-      );
-    }
-
-    const burn = Math.abs(monthlyImpact);
-    const months = liquidAssets / burn;
-
-    const depletionDate = new Date();
-    depletionDate.setMonth(depletionDate.getMonth() + Math.floor(months));
-
-    return bot.sendMessage(
-      msg.chat.id,
-      `🔮 Predictive Runway\n\n` +
-      `Monthly Recurring Net: -${burn.toFixed(2)}\n` +
-      `Liquid Assets: ${liquidAssets}\n\n` +
-      `⏳ Funds depleted in: ${months.toFixed(1)} months\n` +
-      `📅 Estimated date: ${depletionDate.toISOString().split("T")[0]}`
-    );
-
-  } catch (err) {
-    console.error(err);
-    bot.sendMessage(msg.chat.id, "Error calculating forecast.");
-  }
-});
-
-  bot.onText(/\/forecast/, async (msg) => {
+/* ================================================
+ * FORCAST
+   =============================================== */ 
+bot.onText(/\/forecast/, async (msg) => {
   try {
     const balances = await getBalances();
     const recurring = await getRecurringTransactions();
@@ -367,7 +295,7 @@ bot.onText(/\/forecast/, (msg) => {
     let monthlyImpact = 0;
 
     for (const r of recurring) {
-      let multiplier = {
+      const multiplier = {
         daily: 30,
         weekly: 4.33,
         monthly: 1,
@@ -376,12 +304,14 @@ bot.onText(/\/forecast/, (msg) => {
 
       const amount = (Number(r.amount) || 0) * multiplier;
 
+      // Debit to asset = increase
       if (r.debit_account?.startsWith("assets:bank")) {
-        monthlyImpact -= amount;
+        monthlyImpact += amount;
       }
 
+      // Credit to asset = decrease
       if (r.credit_account?.startsWith("assets:bank")) {
-        monthlyImpact += amount;
+        monthlyImpact -= amount;
       }
     }
 
@@ -407,10 +337,10 @@ bot.onText(/\/forecast/, (msg) => {
     return bot.sendMessage(
       msg.chat.id,
       `🔮 Predictive Runway\n\n` +
-      `Monthly Net: -${burn}\n` +
-      `Liquid Assets: ${liquidAssets}\n\n` +
-      `⏳ ${months.toFixed(1)} months remaining\n` +
-      `📅 ${depletionDate.toISOString().slice(0, 10)}`
+        `Monthly Net: -${burn}\n` +
+        `Liquid Assets: ${liquidAssets}\n\n` +
+        `⏳ ${months.toFixed(1)} months remaining\n` +
+        `📅 ${depletionDate.toISOString().slice(0, 10)}`
     );
 
   } catch (err) {
@@ -419,72 +349,63 @@ bot.onText(/\/forecast/, (msg) => {
   }
 });
 
-/* ==================================================
- * HYBRID FORECAST (Recurring + Real Burn)
-   ================================================== */
-bot.onText(/\/hybrid/, (msg) => {
+bot.onText(/\/hybrid/, async (msg) => {
   try {
-    const balances = getBalances();
-    const recurring = getRecurringTransactions();
-    const totals = getLast30DayIncomeAndExpenses();
+    const balances = await getBalances();
+    const recurring = await getRecurringTransactions();
+    const totals = await getLast30DayIncomeAndExpenses();
 
-    // 1️⃣ Liquid assets
     let liquidAssets = 0;
 
-    balances.forEach(b => {
+    for (const b of balances) {
       if (b.account.startsWith("assets:bank")) {
-        liquidAssets += b.balance;
+        liquidAssets += Number(b.balance) || 0;
       }
-    });
+    }
 
-    // 2️⃣ Recent 30-day operating burn
     let income = 0;
     let expenses = 0;
 
-    totals.forEach(r => {
-      if (r.type === "income") income += r.total;
-      if (r.type === "expenses") expenses += r.total;
-    });
+    for (const r of totals) {
+      if (r.type === "income") income += Number(r.total) || 0;
+      if (r.type === "expenses") expenses += Number(r.total) || 0;
+    }
 
-    const operatingIncome = -income;
-    const operatingExpenses = expenses;
-    const recentBurn = operatingExpenses - operatingIncome;
+    // Let ledger sign define polarity
+    const recentBurn = expenses - income;
 
-    // 3️⃣ Recurring monthly impact
     let recurringImpact = 0;
 
-    recurring.forEach(r => {
-      let multiplier = 1;
+    for (const r of recurring) {
+      const multiplier = {
+        daily: 30,
+        weekly: 4.33,
+        monthly: 1,
+        yearly: 1 / 12
+      }[r.frequency] || 1;
 
-      if (r.frequency === "daily") multiplier = 30;
-      if (r.frequency === "weekly") multiplier = 4.33;
-      if (r.frequency === "monthly") multiplier = 1;
-      if (r.frequency === "yearly") multiplier = 1 / 12;
+      const amount = (Number(r.amount) || 0) * multiplier;
 
-      const amount = r.amount * multiplier;
-
-      // Debit to bank = money IN
-      if (r.debit_account.startsWith("assets:bank")) {
+      if (r.debit_account?.startsWith("assets:bank")) {
         recurringImpact += amount;
       }
 
-      // Credit to bank = money OUT
-      if (r.credit_account.startsWith("assets:bank")) {
+      if (r.credit_account?.startsWith("assets:bank")) {
         recurringImpact -= amount;
       }
-    });
+    }
 
-    // 4️⃣ Combine both
-    const projectedMonthlyNet = recurringImpact - recentBurn;
+    liquidAssets = Number(liquidAssets.toFixed(2));
+    recurringImpact = Number(recurringImpact.toFixed(2));
+    const projectedMonthlyNet = Number((recurringImpact - recentBurn).toFixed(2));
 
-    // PROFIT CASE
     if (projectedMonthlyNet >= 0) {
       return bot.sendMessage(
         msg.chat.id,
         `🔮 Hybrid Forecast\n\n` +
-        `Recurring Net: ${recurringImpact.toFixed(2)}\n` +
+        `Recurring Net: ${recurringImpact}\n` +
         `Recent Burn: ${recentBurn.toFixed(2)}\n\n` +
-        `📈 Projected Monthly Net: +${projectedMonthlyNet.toFixed(2)}\n` +
+        `📈 Projected Monthly Net: +${projectedMonthlyNet}\n` +
         `🏦 Liquid Assets: ${liquidAssets}\n\n` +
         `Runway: ∞`
       );
@@ -499,16 +420,16 @@ bot.onText(/\/hybrid/, (msg) => {
     return bot.sendMessage(
       msg.chat.id,
       `🔮 Hybrid Forecast\n\n` +
-      `Recurring Net: ${recurringImpact.toFixed(2)}\n` +
+      `Recurring Net: ${recurringImpact}\n` +
       `Recent Burn: ${recentBurn.toFixed(2)}\n\n` +
       `📉 Projected Monthly Net: -${burn.toFixed(2)}\n` +
       `🏦 Liquid Assets: ${liquidAssets}\n\n` +
-      `⏳ Funds depleted in: ${months.toFixed(1)} months\n` +
-      `📅 Estimated date: ${depletionDate.toISOString().split("T")[0]}`
+      `⏳ ${months.toFixed(1)} months remaining\n` +
+      `📅 ${depletionDate.toISOString().slice(0, 10)}`
     );
 
   } catch (err) {
-    console.error(err);
-    bot.sendMessage(msg.chat.id, "Error calculating hybrid forecast.");
+    console.error("Hybrid error:", err);
+    return bot.sendMessage(msg.chat.id, "Error calculating hybrid forecast.");
   }
 });
