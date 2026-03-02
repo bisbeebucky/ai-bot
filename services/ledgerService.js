@@ -1,10 +1,22 @@
 const db = require("../models/db");
 
 /*
+  Determine account type from account name
+*/
+function inferAccountType(accountName) {
+  if (accountName.startsWith("assets:")) return "ASSETS";
+  if (accountName.startsWith("expenses:")) return "EXPENSES";
+  if (accountName.startsWith("income:")) return "INCOME";
+  if (accountName.startsWith("liabilities:")) return "LIABILITIES";
+  return "OTHER";
+}
+
+/*
   Ensures account exists.
   If not, creates it.
 */
-function getOrCreateAccount(accountName, type) {
+function getOrCreateAccount(accountName) {
+
   const find = db.prepare(`
     SELECT id FROM accounts WHERE name = ?
   `);
@@ -18,11 +30,28 @@ function getOrCreateAccount(accountName, type) {
     VALUES (?, ?)
   `);
 
+  const type = inferAccountType(accountName);
+
   const result = insert.run(accountName, type);
   return result.lastInsertRowid;
 }
 
-function addTransaction(date, description, postings) {
+/*
+  Add full transaction object
+  Expected format:
+  {
+    date,
+    description,
+    postings: [
+      { account, amount }
+    ]
+  }
+*/
+function addTransaction(transaction) {
+
+  if (!transaction.postings || transaction.postings.length < 2) {
+    throw new Error("Transaction must contain at least two postings.");
+  }
 
   const insertTransaction = db.prepare(`
     INSERT INTO transactions (date, description)
@@ -36,12 +65,16 @@ function addTransaction(date, description, postings) {
 
   const tx = db.transaction(() => {
 
-    const result = insertTransaction.run(date, description);
+    const result = insertTransaction.run(
+      transaction.date,
+      transaction.description
+    );
+
     const transactionId = result.lastInsertRowid;
 
-    for (const p of postings) {
+    for (const p of transaction.postings) {
 
-      const accountId = getOrCreateAccount(p.account, p.type);
+      const accountId = getOrCreateAccount(p.account);
 
       insertPosting.run(
         transactionId,

@@ -1,0 +1,2 @@
+To setup the Startup Script, copy/paste the following command:
+sudo env PATH=$PATH:/usr/bin /home/chronos/.npm-global/lib/node_modules/pm2/bin/pm2 startup systemd -u chronos --hp /home/chronos

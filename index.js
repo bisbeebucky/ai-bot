@@ -1,139 +1,182 @@
 const TelegramBot = require("node-telegram-bot-api");
 const OpenAI = require("openai");
+const cron = require("node-cron");
 
-const { getBalances } = require("./services/reportService");
 const { addTransaction } = require("./services/ledgerService");
+const { addRecurring, processRecurring } = require("./services/recurringService");
+const {
+  getBalances,
+  getIncomeStatement,
+  getNetWorthData
+} = require("./services/reportService");
 
-const token = process.env.TELEGRAM_BOT_TOKEN;
+/* =====================================================
+   ENV CHECKS
+===================================================== */
 
-if (!token) {
+if (!process.env.TELEGRAM_BOT_TOKEN) {
   console.error("TELEGRAM_BOT_TOKEN not set");
   process.exit(1);
 }
 
-const bot = new TelegramBot(token, { polling: true });
+if (!process.env.OPENAI_API_KEY) {
+  console.error("OPENAI_API_KEY not set");
+  process.exit(1);
+}
+
+/* =====================================================
+   CLIENTS
+===================================================== */
+
+const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, {
+  polling: true
+});
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
-  baseURL: "https://openrouter.ai/api/v1"
+  baseURL: "https://openrouter.ai/api/v1" // remove if not using OpenRouter
 });
 
 /* =====================================================
-   SYSTEM PROMPT – STRICT DOUBLE ENTRY ACCOUNTING
+   SYSTEM PROMPT – STRICT DOUBLE ENTRY
 ===================================================== */
 
 const systemPrompt = `
-You convert user messages into STRICT double-entry accounting transactions.
+You are a finance assistant.
 
-CRITICAL RULES:
-- Return ONLY valid JSON.
-- No explanations.
-- No markdown.
-- No text outside JSON.
-- Always create at least TWO postings.
+You have TWO MODES:
+
+1) CHAT MODE
+If the message is conversational, greeting, question, or not clearly a financial transaction:
+Respond in normal plain text.
+
+2) ACCOUNTING MODE
+If the message clearly describes money being earned, spent, transferred, or paid:
+Return ONLY valid JSON.
+No markdown.
+No explanation.
+No extra text.
+
+STRICT RULES:
+- Only return JSON if it is DEFINITELY a financial transaction.
+- If unsure, use CHAT MODE.
+- Transactions MUST have at least two postings.
 - Postings MUST balance to zero.
-- Sum of all amounts must equal 0.
 
 ACCOUNTING SIGN RULES:
-- Asset increase = positive
-- Asset decrease = negative
-- Expense = negative
-- Income = negative
+- Assets increase = positive
+- Assets decrease = negative
+- Expenses increase = positive
+- Income increase = negative
 - Liability increase = negative
 - Liability decrease = positive
-- Equity increase = negative
 
-DEFAULT BEHAVIOR:
-- If user receives money and no asset specified → use "assets:bank"
-- If user spends money and no payment source specified → use "assets:bank"
-- If user says "cash" → use "assets:cash"
-- If user says "card" → use "assets:bank"
-- Salary → "income:salary"
-- Food/restaurant → "expenses:food"
-- Rent → "expenses:rent"
+DEFAULT ACCOUNTS:
+- Bank: assets:bank
+- Cash: assets:cash
+- Salary: income:salary
+- Food: expenses:food
+- Rent: expenses:rent
 
-DATE RULES:
-- If user says "today" → use today's date.
-- Format must be YYYY-MM-DD.
-
-ACCOUNT NAMING:
-- Always lowercase.
-- Use colon format like:
-  assets:bank
-  assets:cash
-  expenses:food
-  income:salary
-
-OUTPUT FORMAT:
+FORMAT:
 
 {
   "date": "YYYY-MM-DD",
   "description": "short description",
   "postings": [
-    { "account": "assets:bank", "type": "assets", "amount": 1000 },
-    { "account": "income:salary", "type": "income", "amount": -1000 }
+    { "account": "assets:bank", "amount": 1000 },
+    { "account": "income:salary", "amount": -1000 }
   ]
 }
 `;
 
 /* =====================================================
-   /balance command
+   DAILY RECURRING SCHEDULER
+===================================================== */
+
+cron.schedule("0 0 * * *", () => {
+  try {
+    const count = processRecurring();
+    console.log(`Processed ${count} recurring transactions.`);
+  } catch (err) {
+    console.error("Recurring processing error:", err);
+  }
+});
+
+/* =====================================================
+   COMMANDS
 ===================================================== */
 
 bot.onText(/\/balance/, (msg) => {
   try {
     const balances = getBalances();
-
     if (!balances.length) {
       return bot.sendMessage(msg.chat.id, "No transactions yet.");
     }
-
-    const formatForDisplay = (type, balance) => {
-      switch (type) {
-        case "income":
-          return -balance;       // income shown positive
-        case "expenses":
-          return -balance;       // expenses shown negative
-        case "liabilities":
-          return -balance;       // liabilities shown positive
-        case "equity":
-          return -balance;       // equity shown positive
-        default:
-          return balance;        // assets unchanged
-      }
-    };
 
     let output = "📊 Account Balances\n\n";
     let currentType = null;
 
     balances.forEach(b => {
-
-      const displayBalance = formatForDisplay(b.type, b.balance);
-
       if (b.type !== currentType) {
         currentType = b.type;
         output += `\n${currentType.toUpperCase()}\n`;
       }
-
-      output += `  ${b.account} : ${displayBalance}\n`;
+      output += `  ${b.account} : ${b.balance}\n`;
     });
 
     bot.sendMessage(msg.chat.id, output);
-
   } catch (err) {
     console.error(err);
     bot.sendMessage(msg.chat.id, "Error retrieving balances.");
   }
 });
 
-/* =====================================================
-   NATURAL LANGUAGE → TRANSACTION
-===================================================== */
+bot.onText(/\/income/, (msg) => {
+  try {
+    const rows = getIncomeStatement();
+    if (!rows.length) {
+      return bot.sendMessage(msg.chat.id, "No income or expenses recorded.");
+    }
 
+    let output = "📄 Profit & Loss Statement\n\n";
+
+    rows.forEach(r => {
+      output += `${r.account} : ${r.balance}\n`;
+    });
+
+    bot.sendMessage(msg.chat.id, output);
+  } catch (err) {
+    console.error(err);
+    bot.sendMessage(msg.chat.id, "Error generating income statement.");
+  }
+});
+
+bot.onText(/\/networth/, (msg) => {
+  try {
+    const rows = getNetWorthData();
+    if (!rows.length) {
+      return bot.sendMessage(msg.chat.id, "No assets or liabilities recorded.");
+    }
+
+    let output = "💰 Net Worth Statement\n\n";
+
+    rows.forEach(r => {
+      output += `${r.account} : ${r.balance}\n`;
+    });
+
+    bot.sendMessage(msg.chat.id, output);
+  } catch (err) {
+    console.error(err);
+    bot.sendMessage(msg.chat.id, "Error generating net worth.");
+  }
+});
+
+/* =====================================================
+   HYBRID AI MODE
+===================================================== */
 bot.on("message", async (msg) => {
   if (!msg.text) return;
-
-  // Ignore bot commands like /balance
   if (msg.text.startsWith("/")) return;
 
   try {
@@ -146,43 +189,52 @@ bot.on("message", async (msg) => {
       temperature: 0.1
     });
 
-    const content = response.choices[0].message.content;
+    const content = response.choices[0].message.content.trim();
+
+    // If it's not JSON, treat as normal chat
+    if (!content.startsWith("{") || !content.endsWith("}")) {
+      return bot.sendMessage(msg.chat.id, content);
+    }
 
     let data;
-
     try {
       data = JSON.parse(content);
-    } catch (err) {
-      console.error("JSON Parse Error:", content);
-      return bot.sendMessage(msg.chat.id, "Could not understand transaction.");
+    } catch {
+      return bot.sendMessage(msg.chat.id, content);
     }
 
-    if (!data.date || !data.description || !Array.isArray(data.postings)) {
-      return bot.sendMessage(msg.chat.id, "Invalid transaction format.");
+    // STRICT validation
+    if (
+      !data.date ||
+      !data.description ||
+      !Array.isArray(data.postings) ||
+      data.postings.length < 2
+    ) {
+      return bot.sendMessage(msg.chat.id, content);
     }
 
-    if (data.postings.length < 2) {
-      return bot.sendMessage(msg.chat.id, "Transaction must contain at least two postings.");
+    // Ensure every posting has required fields
+    for (const p of data.postings) {
+      if (!p.account || !p.type || typeof p.amount !== "number") {
+        return bot.sendMessage(msg.chat.id, content);
+      }
     }
 
-    // Ensure balancing
-    const total = data.postings.reduce((sum, p) => sum + Number(p.amount), 0);
+    // Ensure balanced
+    const total = data.postings.reduce((sum, p) => sum + p.amount, 0);
 
     if (Math.abs(total) > 0.001) {
-      console.error("Unbalanced transaction:", data);
       return bot.sendMessage(msg.chat.id, "Transaction not balanced.");
     }
-
     // Save transaction
-    addTransaction(data.date, data.description, data.postings);
+    addTransaction(data);
 
-    bot.sendMessage(
+    return bot.sendMessage(
       msg.chat.id,
       `✅ Recorded: ${data.description} (${data.date})`
     );
 
   } catch (err) {
-    console.error(err);
-    bot.sendMessage(msg.chat.id, "Transaction processing failed.");
+    return bot.sendMessage(msg.chat.id, "Something went wrong.");
   }
 });
