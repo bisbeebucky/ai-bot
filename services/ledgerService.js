@@ -87,4 +87,42 @@ function addTransaction(transaction) {
   tx();
 }
 
-module.exports = { addTransaction };
+/* ==================================
+ * UNDO
+   =============================== */
+
+function deleteLastTransaction() {
+
+  const getLast = db.prepare(`
+    SELECT id, date, description
+    FROM transactions
+    ORDER BY id DESC
+    LIMIT 1
+  `);
+
+  const last = getLast.get();
+
+  if (!last) return null;
+
+  const deletePostings = db.prepare(`
+    DELETE FROM postings WHERE transaction_id = ?
+  `);
+
+  const deleteTransaction = db.prepare(`
+    DELETE FROM transactions WHERE id = ?
+  `);
+
+  const tx = db.transaction(() => {
+    deletePostings.run(last.id);
+    deleteTransaction.run(last.id);
+  });
+
+  tx();
+
+  return last;
+}
+
+module.exports = {
+  addTransaction,
+  deleteLastTransaction
+};
