@@ -1022,24 +1022,29 @@ bot.onText(/^\/buffer$/, (msg) => {
     bot.sendMessage(msg.chat.id, "Buffer error.");
   }
 });
-/* ==================================================
- * WHATIF
- * ================================================== */
-  
-  // Fallback if no amount is provided
-  bot.onText(/^\/whatif$/, (msg) => {
-    return bot.sendMessage(msg.chat.id, "Usage: /whatif 50");
-  });
 
-  bot.onText(/^\/whatif (\d+(\.\d+)?)/, (msg, match) => {
+/* ==================================================
+ * WHATIF (Enhanced)
+ * ================================================== */
+
+// Fallback if no amount provided
+bot.onText(/^\/whatif$/, (msg) => {
+  return bot.sendMessage(msg.chat.id, "Usage: /whatif 50\nExample: /whatif 120.75");
+});
+
+bot.onText(/^\/whatif (-?\d+(\.\d+)?)/, (msg, match) => {
   try {
 
-    const spendAmount = Number(match[1]);
+    const amount = Number(match[1]);
 
     const checking = db.prepare(`
       SELECT id FROM accounts
       WHERE name = 'assets:bank'
     `).get();
+
+    if (!checking) {
+      return bot.sendMessage(msg.chat.id, "Checking account not found.");
+    }
 
     const balanceRow = db.prepare(`
       SELECT SUM(amount) as balance
@@ -1049,24 +1054,35 @@ bot.onText(/^\/buffer$/, (msg) => {
 
     const currentBalance = Number(balanceRow?.balance) || 0;
 
-    const adjustedBalance = currentBalance - spendAmount;
+    // Spending reduces balance, income increases it
+    const adjustedBalance = currentBalance - amount;
 
     const result = simulateCashflow(adjustedBalance, checking.id, 30);
 
-    let output = `🧪 What If You Spend ${spendAmount.toFixed(2)} Today?\n\n`;
-    output += `New starting balance: ${adjustedBalance.toFixed(2)}\n`;
-    output += `Lowest projected balance: ${result.lowestBalance.toFixed(2)}\n\n`;
+    const lowest = result?.lowestBalance ?? adjustedBalance;
+    const delta = lowest - currentBalance;
 
-    if (result.lowestBalance < 0) {
-      output += "⚠ This would cause overdraft.";
+    let output = `🧪 What If Scenario\n\n`;
+
+    if (amount >= 0) {
+      output += `Simulated expense: $${amount.toLocaleString()}\n`;
     } else {
-      output += "✓ Still safe.";
+      output += `Simulated income: $${Math.abs(amount).toLocaleString()}\n`;
+    }
+
+    output += `New starting balance: $${adjustedBalance.toLocaleString()}\n`;
+    output += `Projected 30-Day Minimum: $${lowest.toLocaleString()}\n\n`;
+
+    if (lowest < 0) {
+      output += "⚠️ This would cause an overdraft within 30 days.";
+    } else {
+      output += "✅ No overdraft risk in the next 30 days.";
     }
 
     return bot.sendMessage(msg.chat.id, output);
 
   } catch (err) {
-    console.error(err);
+    console.error("What-if error:", err);
     bot.sendMessage(msg.chat.id, "What-if error.");
   }
 });

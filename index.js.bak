@@ -1022,24 +1022,29 @@ bot.onText(/^\/buffer$/, (msg) => {
     bot.sendMessage(msg.chat.id, "Buffer error.");
   }
 });
-/* ==================================================
- * WHATIF
- * ================================================== */
-  
-  // Fallback if no amount is provided
-  bot.onText(/^\/whatif$/, (msg) => {
-    return bot.sendMessage(msg.chat.id, "Usage: /whatif 50");
-  });
 
-  bot.onText(/^\/whatif (\d+(\.\d+)?)/, (msg, match) => {
+/* ==================================================
+ * WHATIF (Enhanced)
+ * ================================================== */
+
+// Fallback if no amount provided
+bot.onText(/^\/whatif$/, (msg) => {
+  return bot.sendMessage(msg.chat.id, "Usage: /whatif 50\nExample: /whatif 120.75");
+});
+
+bot.onText(/^\/whatif (-?\d+(\.\d+)?)/, (msg, match) => {
   try {
 
-    const spendAmount = Number(match[1]);
+    const amount = Number(match[1]);
 
     const checking = db.prepare(`
       SELECT id FROM accounts
       WHERE name = 'assets:bank'
     `).get();
+
+    if (!checking) {
+      return bot.sendMessage(msg.chat.id, "Checking account not found.");
+    }
 
     const balanceRow = db.prepare(`
       SELECT SUM(amount) as balance
@@ -1049,35 +1054,44 @@ bot.onText(/^\/buffer$/, (msg) => {
 
     const currentBalance = Number(balanceRow?.balance) || 0;
 
-    const adjustedBalance = currentBalance - spendAmount;
+    // Spending reduces balance, income increases it
+    const adjustedBalance = currentBalance - amount;
 
     const result = simulateCashflow(adjustedBalance, checking.id, 30);
 
-    let output = `🧪 What If You Spend ${spendAmount.toFixed(2)} Today?\n\n`;
-    output += `New starting balance: ${adjustedBalance.toFixed(2)}\n`;
-    output += `Lowest projected balance: ${result.lowestBalance.toFixed(2)}\n\n`;
+    const lowest = result?.lowestBalance ?? adjustedBalance;
+    const delta = lowest - currentBalance;
 
-    if (result.lowestBalance < 0) {
-      output += "⚠ This would cause overdraft.";
+    let output = `🧪 What If Scenario\n\n`;
+
+    if (amount >= 0) {
+      output += `Simulated expense: $${amount.toLocaleString()}\n`;
     } else {
-      output += "✓ Still safe.";
+      output += `Simulated income: $${Math.abs(amount).toLocaleString()}\n`;
+    }
+
+    output += `New starting balance: $${adjustedBalance.toLocaleString()}\n`;
+    output += `Projected 30-Day Minimum: $${lowest.toLocaleString()}\n\n`;
+
+    if (lowest < 0) {
+      output += "⚠️ This would cause an overdraft within 30 days.";
+    } else {
+      output += "✅ No overdraft risk in the next 30 days.";
     }
 
     return bot.sendMessage(msg.chat.id, output);
 
   } catch (err) {
-    console.error(err);
+    console.error("What-if error:", err);
     bot.sendMessage(msg.chat.id, "What-if error.");
   }
 });
 
 /* ==================================================
- * FORECAST GRAPH (Dark Mode + Mobile Optimized)
+ * FORECAST GRAPH (Dark Mode + Risk Detection)
  * ================================================== */
 
 const { ChartJSNodeCanvas } = require('chartjs-node-canvas');
-const fs = require('fs');
-const path = require('path');
 
 bot.onText(/^\/forecastgraph$/, async (msg) => {
   try {
@@ -1111,14 +1125,16 @@ bot.onText(/^\/forecastgraph$/, async (msg) => {
       }
     }
 
-    // Higher resolution for sharper mobile display
+    const minBalance = Math.min(...balances);
+    const hasNegative = minBalance < 0;
+
     const width = 1000;
     const height = 600;
 
     const chartJSNodeCanvas = new ChartJSNodeCanvas({
       width,
       height,
-      backgroundColour: '#111827' // Dark slate background
+      backgroundColour: '#0f172a' // dark slate background
     });
 
     const configuration = {
@@ -1130,24 +1146,25 @@ bot.onText(/^\/forecastgraph$/, async (msg) => {
           data: balances,
           borderWidth: 4,
           tension: 0.25,
-          pointRadius: 5,
-          pointHoverRadius: 8,
-          borderColor: '#4ade80', // green line
-          backgroundColor: 'rgba(74, 222, 128, 0.2)',
-          fill: true
+          pointRadius: 4,
+          fill: true,
+          borderColor: hasNegative ? '#ef4444' : '#22c55e',
+          backgroundColor: hasNegative
+            ? 'rgba(239, 68, 68, 0.15)'
+            : 'rgba(34, 197, 94, 0.2)'
         }]
       },
       options: {
         responsive: false,
         layout: {
-          padding: 30
+          padding: 40
         },
         plugins: {
           legend: {
             labels: {
               color: '#ffffff',
               font: {
-                size: 22
+                size: 24
               }
             }
           }
@@ -1156,9 +1173,7 @@ bot.onText(/^\/forecastgraph$/, async (msg) => {
           x: {
             ticks: {
               color: '#ffffff',
-              font: {
-                size: 18
-              },
+              font: { size: 20 },
               maxTicksLimit: 8
             },
             grid: {
@@ -1168,20 +1183,15 @@ bot.onText(/^\/forecastgraph$/, async (msg) => {
           y: {
             ticks: {
               color: '#ffffff',
-              font: {
-                size: 20
-              },
-              callback: function(value) {
-                return '$' + Number(value).toLocaleString();
-              }
+              font: { size: 22 },
+              callback: value =>
+                '$' + Number(value).toLocaleString()
             },
             grid: {
-              color: function(context) {
-                if (context.tick.value === 0) {
-                  return 'rgba(255,255,255,0.4)'; // Highlight zero line
-                }
-                return 'rgba(255,255,255,0.08)';
-              }
+              color: ctx =>
+                ctx.tick.value === 0
+                  ? 'rgba(255,255,255,0.35)'
+                  : 'rgba(255,255,255,0.08)'
             }
           }
         }
@@ -1189,11 +1199,24 @@ bot.onText(/^\/forecastgraph$/, async (msg) => {
     };
 
     const image = await chartJSNodeCanvas.renderToBuffer(configuration);
-    const filePath = path.join(__dirname, 'forecast.png');
 
-    fs.writeFileSync(filePath, image);
-    await bot.sendPhoto(msg.chat.id, filePath);
-    fs.unlinkSync(filePath);
+    // Send directly from memory (no temp file, no warning)
+    await bot.sendPhoto(msg.chat.id, image, {
+      filename: 'forecast.png',
+      contentType: 'image/png'
+    });
+
+    // Send financial summary
+    let summary = `Current Balance: $${currentBalance.toLocaleString()}\n`;
+    summary += `Projected 30-Day Minimum: $${minBalance.toLocaleString()}\n\n`;
+
+    if (hasNegative) {
+      summary += "⚠️ Overdraft risk detected in the next 30 days.";
+    } else {
+      summary += "✅ No overdraft risk in the next 30 days.";
+    }
+
+    await bot.sendMessage(msg.chat.id, summary);
 
   } catch (err) {
     console.error("Forecast graph error:", err);
