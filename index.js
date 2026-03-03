@@ -39,9 +39,66 @@ const openai = new OpenAI({
   baseURL: "https://openrouter.ai/api/v1" // remove if not using OpenRouter
 });
 
-/* ==============================
-   UNDO
-============================== */
+/* ==================================
+ * Extract Simulation Into a Function
+ * ================================== */
+
+function simulateCashflow(startBalance, checkingId, daysForward = 30) {
+
+  let projectedBalance = startBalance;
+  let lowestBalance = startBalance;
+  let lowestDate = null;
+  let lowestTrigger = null;
+
+  const now = new Date();
+  const endDate = new Date(now);
+  endDate.setDate(now.getDate() + daysForward);
+
+  const endDateString = endDate.toISOString().split("T")[0];
+
+  const recurring = db.prepare(`
+    SELECT *
+    FROM recurring_transactions
+    WHERE next_run <= ?
+    ORDER BY next_run ASC
+  `).all(endDateString);
+
+  const timeline = [];
+
+  for (const r of recurring) {
+
+    if (r.debit_account_id === checkingId) {
+      projectedBalance += r.amount;
+    }
+
+    if (r.credit_account_id === checkingId) {
+      projectedBalance -= r.amount;
+    }
+
+    timeline.push({
+      date: r.next_run,
+      description: r.description,
+      balance: projectedBalance
+    });
+
+    if (projectedBalance < lowestBalance) {
+      lowestBalance = projectedBalance;
+      lowestDate = r.next_run;
+      lowestTrigger = r.description;
+    }
+  }
+
+  return {
+    lowestBalance,
+    lowestDate,
+    lowestTrigger,
+    timeline
+  };
+}
+
+/* ==================================
+ * UNDO
+ * ================================== */
 
 bot.onText(/\/undo/, (msg) => {
   try {
@@ -254,73 +311,36 @@ bot.onText(/\/runway/, (msg) => {
 /* ================================================
  * FORCAST
    =============================================== */ 
-bot.onText(/\/forecast/, async (msg) => {
+ bot.onText(/^\/forecast$/, (msg) => {
   try {
-    const balances = await getBalances();
-    const recurring = await getRecurringTransactions();
 
-    let liquidAssets = 0;
+    const checking = db.prepare(`
+      SELECT id FROM accounts
+      WHERE name = 'assets:bank'
+    `).get();
 
-    for (const b of balances) {
-      if (b.account.startsWith("assets:bank")) {
-        liquidAssets += Number(b.balance) || 0;
-      }
+    const balanceRow = db.prepare(`
+      SELECT SUM(amount) as balance
+      FROM postings
+      WHERE account_id = ?
+    `).get(checking.id);
+
+    const currentBalance = Number(balanceRow?.balance) || 0;
+
+    const result = simulateCashflow(currentBalance, checking.id, 30);
+
+    let output = "📊 30-Day Forecast\n\n";
+    output += `Starting Balance: ${currentBalance.toFixed(2)}\n\n`;
+
+    for (const event of result.timeline) {
+      output += `${event.date} | ${event.description} → ${event.balance.toFixed(2)}\n`;
     }
 
-    let monthlyImpact = 0;
-
-    for (const r of recurring) {
-      const multiplier = {
-        daily: 30,
-        weekly: 4.33,
-        monthly: 1,
-        yearly: 1 / 12
-      }[r.frequency] || 1;
-
-      const amount = (Number(r.amount) || 0) * multiplier;
-
-      // Debit to asset = increase
-      if (r.debit_account?.startsWith("assets:bank")) {
-        monthlyImpact += amount;
-      }
-
-      // Credit to asset = decrease
-      if (r.credit_account?.startsWith("assets:bank")) {
-        monthlyImpact -= amount;
-      }
-    }
-
-    liquidAssets = Number(liquidAssets.toFixed(2));
-    monthlyImpact = Number(monthlyImpact.toFixed(2));
-
-    if (monthlyImpact >= 0) {
-      return bot.sendMessage(
-        msg.chat.id,
-        `🔮 Predictive Runway\n\n` +
-        `Monthly Net: +${monthlyImpact}\n` +
-        `Liquid Assets: ${liquidAssets}\n\n` +
-        `Runway: ∞`
-      );
-    }
-
-    const burn = Math.abs(monthlyImpact);
-    const months = liquidAssets / burn;
-
-    const depletionDate = new Date();
-    depletionDate.setMonth(depletionDate.getMonth() + Math.floor(months));
-
-    return bot.sendMessage(
-      msg.chat.id,
-      `🔮 Predictive Runway\n\n` +
-        `Monthly Net: -${burn}\n` +
-        `Liquid Assets: ${liquidAssets}\n\n` +
-        `⏳ ${months.toFixed(1)} months remaining\n` +
-        `📅 ${depletionDate.toISOString().slice(0, 10)}`
-    );
+    return bot.sendMessage(msg.chat.id, output);
 
   } catch (err) {
-    console.error("Forecast error:", err);
-    return bot.sendMessage(msg.chat.id, "Error calculating forecast.");
+    console.error(err);
+    bot.sendMessage(msg.chat.id, "Forecast error.");
   }
 });
 
@@ -779,8 +799,418 @@ bot.onText(/^\/balance(@\w+)?$/, async (msg) => {
 });
 
 /* =====================================================
-   AI MESSAGE HANDLER (CHAT + ACCOUNTING MODE)
+   MONTHLY REPORT (better-sqlite3 version)
 ===================================================== */
+
+const db = require("./models/db");
+
+bot.onText(/^\/report(@\w+)?$/, (msg) => {
+  try {
+    const now = new Date();
+    const startOfMonth = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      1
+    ).toISOString();
+
+    const rows = db.prepare(`
+      SELECT a.name as account,
+             SUM(p.amount) as total
+      FROM postings p
+      JOIN transactions t ON p.transaction_id = t.id
+      JOIN accounts a ON p.account_id = a.id
+      WHERE t.date >= ?
+      GROUP BY a.name
+    `).all(startOfMonth);
+
+    let income = 0;
+    let expenses = 0;
+    const categoryTotals = {};
+
+    for (const row of rows) {
+      const amount = Number(row.total) || 0;
+
+      // Income (stored negative)
+      if (row.account.startsWith("income:")) {
+        income += -amount;
+      }
+
+      // Expenses
+      if (row.account.startsWith("expenses:")) {
+        expenses += amount;
+
+        // Roll up to root category
+        const parts = row.account.split(":");
+        const rootCategory = parts[1] || "other";
+
+        if (!categoryTotals[rootCategory]) {
+          categoryTotals[rootCategory] = 0;
+        }
+
+        categoryTotals[rootCategory] += amount;
+      }
+    }
+
+    const net = income - expenses;
+
+    let statusLine;
+
+    if (net > 0) {
+    statusLine = "Status: ✓ On track";
+  } else if (net < 0) {
+    statusLine = "Status: ⚠ Over budget";
+  } else {
+    statusLine = "Status: ⚖ Break even";
+  }
+    let output = "📅 Monthly Report\n\n";
+    output += `📈 Income: ${income.toFixed(2)}\n`;
+    output += `📉 Expenses: ${expenses.toFixed(2)}\n`;
+    output += `💰 Net: ${net.toFixed(2)}\n`;
+    output += `${statusLine}\n\n`;
+    const sortedCategories = Object.entries(categoryTotals)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+
+    if (sortedCategories.length > 0) {
+      output += "Top Categories:\n";
+
+      for (const [category, total] of sortedCategories) {
+        output += `• ${category}: ${total.toFixed(2)}\n`;
+      }
+    }
+
+    bot.sendMessage(msg.chat.id, output);
+
+  } catch (err) {
+    console.error("Report error:", err);
+    bot.sendMessage(msg.chat.id, "Error generating report.");
+  }
+});
+
+/* =====================================================
+   OVERDRAFT SAFETY FORECAST (FINAL CLEAN VERSION)
+===================================================== */
+
+bot.onText(/^\/safety(@\w+)?$/, (msg) => {
+  try {
+
+    console.log("Safety command triggered");
+
+    // 1️⃣ Get checking account (adjust name if needed)
+    const checking = db.prepare(`
+      SELECT id FROM accounts
+      WHERE name = 'assets:bank'
+    `).get();
+
+    if (!checking) {
+      return bot.sendMessage(msg.chat.id, "Checking account not found.");
+    }
+
+    // 2️⃣ Current balance
+    const balanceRow = db.prepare(`
+      SELECT SUM(amount) as balance
+      FROM postings
+      WHERE account_id = ?
+    `).get(checking.id);
+
+    let currentBalance = Number(balanceRow?.balance) || 0;
+    let projectedBalance = currentBalance;
+    let lowestBalance = currentBalance;
+    let lowestDate = null;
+    let lowestTrigger = null;
+
+    // 3️⃣ End of month
+    const now = new Date();
+    const endOfMonth = new Date(
+      now.getFullYear(),
+      now.getMonth() + 1,
+      1
+    );
+
+    const endDateString = endOfMonth.toISOString().split("T")[0];
+
+    // 4️⃣ Get recurring sorted by date
+    const recurring = db.prepare(`
+      SELECT *
+      FROM recurring_transactions
+      WHERE next_run < ?
+      ORDER BY next_run ASC
+    `).all(endDateString);
+
+    // 5️⃣ Simulate chronologically
+    for (const r of recurring) {
+
+      // Debit increases asset
+      if (r.debit_account_id === checking.id) {
+        projectedBalance += r.amount;
+      }
+
+      // Credit decreases asset
+      if (r.credit_account_id === checking.id) {
+        projectedBalance -= r.amount;
+      }
+
+      if (projectedBalance < lowestBalance) {
+        lowestBalance = projectedBalance;
+        lowestDate = r.next_run;
+        lowestTrigger = r.description;
+      }
+    }
+
+    // 6️⃣ Build output
+    let output = "🛡 Overdraft Safety Check\n\n";
+    output += `Current Balance: ${currentBalance.toFixed(2)}\n`;
+    output += `Projected Lowest Balance: ${lowestBalance.toFixed(2)}\n`;
+
+    if (lowestDate) {
+      output += `Lowest On: ${lowestDate}\n`;
+      output += `Caused By: ${lowestTrigger}\n`;
+    }
+
+    output += "\n";
+
+    if (lowestBalance < 0) {
+      output += "Status: ⚠ Risk of overdraft\n";
+      output += `Minimum Needed: ${Math.abs(lowestBalance).toFixed(2)} buffer`;
+    } else {
+      output += "Status: ✓ Safe";
+    }
+
+    return bot.sendMessage(msg.chat.id, output);
+
+  } catch (err) {
+    console.error("Safety error:", err);
+    return bot.sendMessage(msg.chat.id, "Error calculating safety.");
+  }
+});
+
+/* ======================================
+ * BUFFER
+ * ====================================== */
+bot.onText(/^\/buffer$/, (msg) => {
+  try {
+
+    const checking = db.prepare(`
+      SELECT id FROM accounts
+      WHERE name = 'assets:bank'
+    `).get();
+
+    const balanceRow = db.prepare(`
+      SELECT SUM(amount) as balance
+      FROM postings
+      WHERE account_id = ?
+    `).get(checking.id);
+
+    const currentBalance = Number(balanceRow?.balance) || 0;
+
+    const result = simulateCashflow(currentBalance, checking.id, 30);
+
+    let requiredBuffer = 0;
+
+    if (result.lowestBalance < 0) {
+      requiredBuffer = Math.abs(result.lowestBalance);
+    }
+
+    let output = "🧱 Recommended Buffer\n\n";
+    output += `Lowest projected balance: ${result.lowestBalance.toFixed(2)}\n`;
+    output += `Minimum safe buffer: ${requiredBuffer.toFixed(2)}\n`;
+
+    return bot.sendMessage(msg.chat.id, output);
+
+  } catch (err) {
+    console.error(err);
+    bot.sendMessage(msg.chat.id, "Buffer error.");
+  }
+});
+/* ==================================================
+ * WHATIF
+ * ================================================== */
+  
+  // Fallback if no amount is provided
+  bot.onText(/^\/whatif$/, (msg) => {
+    return bot.sendMessage(msg.chat.id, "Usage: /whatif 50");
+  });
+
+  bot.onText(/^\/whatif (\d+(\.\d+)?)/, (msg, match) => {
+  try {
+
+    const spendAmount = Number(match[1]);
+
+    const checking = db.prepare(`
+      SELECT id FROM accounts
+      WHERE name = 'assets:bank'
+    `).get();
+
+    const balanceRow = db.prepare(`
+      SELECT SUM(amount) as balance
+      FROM postings
+      WHERE account_id = ?
+    `).get(checking.id);
+
+    const currentBalance = Number(balanceRow?.balance) || 0;
+
+    const adjustedBalance = currentBalance - spendAmount;
+
+    const result = simulateCashflow(adjustedBalance, checking.id, 30);
+
+    let output = `🧪 What If You Spend ${spendAmount.toFixed(2)} Today?\n\n`;
+    output += `New starting balance: ${adjustedBalance.toFixed(2)}\n`;
+    output += `Lowest projected balance: ${result.lowestBalance.toFixed(2)}\n\n`;
+
+    if (result.lowestBalance < 0) {
+      output += "⚠ This would cause overdraft.";
+    } else {
+      output += "✓ Still safe.";
+    }
+
+    return bot.sendMessage(msg.chat.id, output);
+
+  } catch (err) {
+    console.error(err);
+    bot.sendMessage(msg.chat.id, "What-if error.");
+  }
+});
+
+/* ==================================================
+ * FORECAST GRAPH (Dark Mode + Risk Detection)
+ * ================================================== */
+
+const { ChartJSNodeCanvas } = require('chartjs-node-canvas');
+
+bot.onText(/^\/forecastgraph$/, async (msg) => {
+  try {
+
+    const checking = db.prepare(`
+      SELECT id FROM accounts
+      WHERE name = 'assets:bank'
+    `).get();
+
+    if (!checking) {
+      return bot.sendMessage(msg.chat.id, "Checking account not found.");
+    }
+
+    const balanceRow = db.prepare(`
+      SELECT SUM(amount) as balance
+      FROM postings
+      WHERE account_id = ?
+    `).get(checking.id);
+
+    const currentBalance = Number(balanceRow?.balance) || 0;
+
+    const result = simulateCashflow(currentBalance, checking.id, 30);
+
+    const labels = ["Today"];
+    const balances = [currentBalance];
+
+    if (result?.timeline?.length) {
+      for (const event of result.timeline) {
+        labels.push(event.date);
+        balances.push(event.balance);
+      }
+    }
+
+    const minBalance = Math.min(...balances);
+    const hasNegative = minBalance < 0;
+
+    const width = 1000;
+    const height = 600;
+
+    const chartJSNodeCanvas = new ChartJSNodeCanvas({
+      width,
+      height,
+      backgroundColour: '#0f172a' // dark slate background
+    });
+
+    const configuration = {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Projected Balance',
+          data: balances,
+          borderWidth: 4,
+          tension: 0.25,
+          pointRadius: 4,
+          fill: true,
+          borderColor: hasNegative ? '#ef4444' : '#22c55e',
+          backgroundColor: hasNegative
+            ? 'rgba(239, 68, 68, 0.15)'
+            : 'rgba(34, 197, 94, 0.2)'
+        }]
+      },
+      options: {
+        responsive: false,
+        layout: {
+          padding: 40
+        },
+        plugins: {
+          legend: {
+            labels: {
+              color: '#ffffff',
+              font: {
+                size: 24
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            ticks: {
+              color: '#ffffff',
+              font: { size: 20 },
+              maxTicksLimit: 8
+            },
+            grid: {
+              color: 'rgba(255,255,255,0.08)'
+            }
+          },
+          y: {
+            ticks: {
+              color: '#ffffff',
+              font: { size: 22 },
+              callback: value =>
+                '$' + Number(value).toLocaleString()
+            },
+            grid: {
+              color: ctx =>
+                ctx.tick.value === 0
+                  ? 'rgba(255,255,255,0.35)'
+                  : 'rgba(255,255,255,0.08)'
+            }
+          }
+        }
+      }
+    };
+
+    const image = await chartJSNodeCanvas.renderToBuffer(configuration);
+
+    // Send directly from memory (no temp file, no warning)
+    await bot.sendPhoto(msg.chat.id, image, {
+      filename: 'forecast.png',
+      contentType: 'image/png'
+    });
+
+    // Send financial summary
+    let summary = `Current Balance: $${currentBalance.toLocaleString()}\n`;
+    summary += `Projected 30-Day Minimum: $${minBalance.toLocaleString()}\n\n`;
+
+    if (hasNegative) {
+      summary += "⚠️ Overdraft risk detected in the next 30 days.";
+    } else {
+      summary += "✅ No overdraft risk in the next 30 days.";
+    }
+
+    await bot.sendMessage(msg.chat.id, summary);
+
+  } catch (err) {
+    console.error("Forecast graph error:", err);
+    bot.sendMessage(msg.chat.id, "Error generating forecast graph.");
+  }
+});
+
+/* ==================================================
+ *  AI MESSAGE HANDLER (CHAT + ACCOUNTING MODE)
+ * ================================================== */
 
 bot.on("message", async (msg) => {
   try {
