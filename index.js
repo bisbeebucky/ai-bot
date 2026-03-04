@@ -9,25 +9,33 @@ const cron = require("node-cron");
 
 // Database (centralized instance)
 const db = require("./models/db");
+function ensureCoreAccounts() {
+  const insert = db.prepare(`
+    INSERT OR IGNORE INTO accounts (name, type)
+    VALUES (?, ?)
+  `);
+
+  insert.run("assets:bank", "asset");
+  insert.run("income:salary", "income");
+  insert.run("expenses:food", "expense");
+  insert.run("expenses:rent", "expense");
+  insert.run("income:social_security", "INCOME");
+}
+
+ensureCoreAccounts();
 
 // Core modules
-const { simulateCashflow } = require("./core/simulation");
+const simulateCashflow = require("./core/simulation");
 
-// Services (full service objects)
+// Services
+const createRecurringProcessor = require("./services/recurringProcessor");
+const createLedgerService = require("./services/ledgerService");
+const createFinanceEngine = require("./services/financeEngine");
 const reportService = require("./services/reportService");
-const ledgerService = require("./services/ledgerService");
 const recurringService = require("./services/recurringService");
 
-// Handlers
-const registerWhatIfHandler = require("./handlers/whatif");
-const registerBalanceHandler = require("./handlers/balance");
-const registerReportHandler = require("./handlers/report");
-const registerIncomeHandler = require("./handlers/income");
-const registerNetWorthHandler = require("./handlers/networth");
-const registerSafetyHandler = require("./handlers/safety");
-const registerLedgerHandler = require("./handlers/ledger");
-const registerRecurringHandler = require("./handlers/recurring");
-
+// Auto-load handler system
+const registerAllHandlers = require("./handlers");
 
 /* =====================================================
    ENVIRONMENT CHECKS
@@ -43,10 +51,13 @@ if (!process.env.OPENAI_API_KEY) {
   process.exit(1);
 }
 
-
 /* =====================================================
    INITIALIZATION
 ===================================================== */
+
+// Create services
+const ledgerService = createLedgerService(db);
+const financeEngine = createFinanceEngine(ledgerService);
 
 // Telegram Bot
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, {
@@ -59,22 +70,21 @@ const openai = new OpenAI({
   baseURL: "https://openrouter.ai/api/v1"
 });
 
-
 /* =====================================================
    REGISTER HANDLERS
 ===================================================== */
 
-registerWhatIfHandler(bot, db, simulateCashflow);
-registerBalanceHandler(bot, db);
+registerAllHandlers(bot, {
+  db,
+  simulateCashflow,
+  reportService,
+  ledgerService,
+  financeEngine,
+  recurringService,
+  openai
+});
 
-registerReportHandler(bot, db, reportService);
-registerIncomeHandler(bot, db, reportService);
-registerNetWorthHandler(bot, db, reportService);
-registerSafetyHandler(bot, db, reportService);
-
-registerLedgerHandler(bot, db, ledgerService);
-registerRecurringHandler(bot, db, recurringService);
-
+console.log("Bot started.");
 // (other registerXYZHandler calls will go here later)
 //
 
@@ -203,81 +213,6 @@ cron.schedule("0 0 * * *", () => {
    COMMANDS
 ===================================================== */
 
-
-/* ==================================================
- * RUNWAY
- =================================================== */
-
-bot.onText(/\/runway/, (msg) => {
-  try {
-    const balances = getBalances();
-    const totals = getLast30DayIncomeAndExpenses();
-
-    // 1️⃣ Liquid assets only (bank accounts)
-    let liquidAssets = 0;
-
-    balances.forEach(b => {
-      if (b.account.startsWith("assets:bank")) {
-        liquidAssets += b.balance;
-      }
-    });
-
-    let income = 0;
-    let expenses = 0;
-
-    totals.forEach(r => {
-      if (r.type === "income") income += r.total;
-      if (r.type === "expenses") expenses += r.total;
-    });
-
-    // income is negative in your system
-    const operatingIncome = -income;
-    const operatingExpenses = expenses;
-
-    const trueBurn = operatingExpenses - operatingIncome;
-
-    // ✅ PROFIT CASE
-    if (trueBurn <= 0) {
-      return bot.sendMessage(
-        msg.chat.id,
-        `🚀 You are profitable.\n\n` +
-        `Income (30d): ${operatingIncome}\n` +
-        `Expenses (30d): ${operatingExpenses}\n` +
-        `Liquid Assets: ${liquidAssets}\n\n` +
-        `Runway: ∞`
-      );
-    }
-
-    // 🔥 Burn calculations
-    const burnPerMonth = trueBurn;
-    const burnPerDay = burnPerMonth / 30;
-
-    const runwayMonths = liquidAssets / burnPerMonth;
-    const runwayDays = liquidAssets / burnPerDay;
-
-    // ⚠️ Smart warning system
-    let warning = "";
-
-    if (runwayMonths < 3) {
-      warning = "\n⚠️ CRITICAL: Less than 3 months runway!";
-    } else if (runwayMonths < 6) {
-      warning = "\n⚠️ Warning: Less than 6 months runway.";
-    }
-
-    return bot.sendMessage(
-      msg.chat.id,
-      `🔥 Operating Burn: ${burnPerMonth.toFixed(2)}/month\n` +
-      `💧 Daily Burn: ${burnPerDay.toFixed(2)}/day\n` +
-      `🏦 Liquid Assets: ${liquidAssets}\n\n` +
-      `⏳ Runway: ${runwayMonths.toFixed(1)} months (${runwayDays.toFixed(0)} days)` +
-      warning
-    );
-
-  } catch (err) {
-    console.error(err);
-    bot.sendMessage(msg.chat.id, "Error calculating runway.");
-  }
-});
 
 /* ================================================
  * FORCAST
@@ -776,69 +711,6 @@ bot.onText(/^\/buffer$/, (msg) => {
   }
 });
 
-/* ==================================================
- * WHATIF (Enhanced)
- * ================================================== */
-
-// Fallback if no amount provided
-bot.onText(/^\/whatif$/, (msg) => {
-  return bot.sendMessage(msg.chat.id, "Usage: /whatif 50\nExample: /whatif 120.75");
-});
-
-bot.onText(/^\/whatif (-?\d+(\.\d+)?)/, (msg, match) => {
-  try {
-
-    const amount = Number(match[1]);
-
-    const checking = db.prepare(`
-      SELECT id FROM accounts
-      WHERE name = 'assets:bank'
-    `).get();
-
-    if (!checking) {
-      return bot.sendMessage(msg.chat.id, "Checking account not found.");
-    }
-
-    const balanceRow = db.prepare(`
-      SELECT SUM(amount) as balance
-      FROM postings
-      WHERE account_id = ?
-    `).get(checking.id);
-
-    const currentBalance = Number(balanceRow?.balance) || 0;
-
-    // Spending reduces balance, income increases it
-    const adjustedBalance = currentBalance - amount;
-
-    const result = simulateCashflow(adjustedBalance, checking.id, 30);
-
-    const lowest = result?.lowestBalance ?? adjustedBalance;
-    const delta = lowest - currentBalance;
-
-    let output = `🧪 What If Scenario\n\n`;
-
-    if (amount >= 0) {
-      output += `Simulated expense: $${amount.toLocaleString()}\n`;
-    } else {
-      output += `Simulated income: $${Math.abs(amount).toLocaleString()}\n`;
-    }
-
-    output += `New starting balance: $${adjustedBalance.toLocaleString()}\n`;
-    output += `Projected 30-Day Minimum: $${lowest.toLocaleString()}\n\n`;
-
-    if (lowest < 0) {
-      output += "⚠️ This would cause an overdraft within 30 days.";
-    } else {
-      output += "✅ No overdraft risk in the next 30 days.";
-    }
-
-    return bot.sendMessage(msg.chat.id, output);
-
-  } catch (err) {
-    console.error("What-if error:", err);
-    bot.sendMessage(msg.chat.id, "What-if error.");
-  }
-});
 
 /* ==================================================
  * FORECAST GRAPH (Dark Mode + Risk Detection)

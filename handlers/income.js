@@ -1,31 +1,31 @@
-module.exports = function registerIncomeHandler(bot, db, reportService) {
+module.exports = function registerIncomeHandler(bot, deps) {
 
-  const { getIncomeStatement } = reportService;
+  const { reportService } = deps;
 
   bot.onText(/^\/income(@\w+)?$/, (msg) => {
+
+    const chatId = msg.chat.id;
+
     try {
 
-      const rows = getIncomeStatement(db);
+      const { income, expenses } =
+        reportService.getLast30DayIncomeAndExpenses();
 
-      if (!rows || !rows.length) {
-        return bot.sendMessage(
-          msg.chat.id,
-          "No income or expenses recorded."
-        );
-      }
+      const net = income - expenses;
 
-      let output = "📊 Profit & Loss Statement\n\n";
+      const message =
+        `📊 Last 30 Days\n\n` +
+        `Income: ${income}\n` +
+        `Expenses: ${expenses}\n` +
+        `Net: ${net}`;
 
-      rows.forEach(r => {
-        output += `${r.account} : ${Number(r.balance).toFixed(2)}\n`;
-      });
-
-      bot.sendMessage(msg.chat.id, output);
+      bot.sendMessage(chatId, message);
 
     } catch (err) {
       console.error("Income error:", err);
-      bot.sendMessage(msg.chat.id, "Error generating income statement.");
+      bot.sendMessage(chatId, "Error retrieving income statement.");
     }
+
   });
 
 };

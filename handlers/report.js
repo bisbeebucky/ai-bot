@@ -1,30 +1,29 @@
-const reportService = require("../services/reportService");
+const financeEngine = require("../services/financeEngine");
 
-module.exports = (bot) => {
+module.exports = function registerReportHandler(bot, deps) {
 
-  bot.onText(/^\/report$/, (msg) => {
+  bot.onText(/^\/report(@\w+)?$/, (msg) => {
     try {
 
-      const netWorth = reportService.getNetWorth();
-      const { income, expenses } =
-        reportService.getLast30DayIncomeAndExpenses();
+      const snapshot = deps.financeEngine.getFinancialSnapshot();
 
-      const message = `
-📊 Monthly Report
+      const liquidAssets = snapshot.liquidAssets || 0;
+      const income = snapshot.income || 0;
+      const expenses = snapshot.expenses || 0;
 
-💰 Net Worth: $${netWorth.toFixed(2)}
+      const netCashflow = income - expenses;
 
-📈 Income (30d): $${income.toFixed(2)}
-📉 Expenses (30d): $${expenses.toFixed(2)}
+      let output = "📊 Financial Report\n\n";
+      output += `Liquid Assets: ${liquidAssets.toFixed(2)}\n`;
+      output += `30d Income: ${income.toFixed(2)}\n`;
+      output += `30d Expenses: ${expenses.toFixed(2)}\n`;
+      output += `Net 30d Cashflow: ${netCashflow.toFixed(2)}\n`;
 
-🔁 Active Recurring: 2
-`;
-
-      bot.sendMessage(msg.chat.id, message);
+      bot.sendMessage(msg.chat.id, output);
 
     } catch (err) {
       console.error("Report error:", err);
-      bot.sendMessage(msg.chat.id, "Report error.");
+      bot.sendMessage(msg.chat.id, "Error generating report.");
     }
   });
 

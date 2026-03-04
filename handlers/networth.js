@@ -1,30 +1,24 @@
-module.exports = function registerNetWorthHandler(bot, db, reportService) {
-
-  const { getNetWorthData } = reportService;
+module.exports = function registerNetWorthHandler(bot, deps) {
 
   bot.onText(/^\/networth(@\w+)?$/, (msg) => {
     try {
 
-      const rows = getNetWorthData(db);
+      const result = deps.financeEngine.calculateNetWorth();
 
-      if (!rows || !rows.length) {
-        return bot.sendMessage(
-          msg.chat.id,
-          "No assets or liabilities recorded."
-        );
-      }
+      const assets = result.assets || 0;
+      const liabilities = result.liabilities || 0;
+      const netWorth = result.netWorth || 0;
 
-      let output = "💎 Net Worth Statement\n\n";
-
-      rows.forEach(r => {
-        output += `${r.account} : ${Number(r.balance).toFixed(2)}\n`;
-      });
+      let output = "💰 Net Worth\n\n";
+      output += `Assets: ${assets.toFixed(2)}\n`;
+      output += `Liabilities: ${liabilities.toFixed(2)}\n`;
+      output += `Net Worth: ${netWorth.toFixed(2)}\n`;
 
       bot.sendMessage(msg.chat.id, output);
 
     } catch (err) {
       console.error("Net worth error:", err);
-      bot.sendMessage(msg.chat.id, "Error generating net worth statement.");
+      bot.sendMessage(msg.chat.id, "Error calculating net worth.");
     }
   });
 

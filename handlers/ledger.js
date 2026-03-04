@@ -1,5 +1,6 @@
-module.exports = function registerLedgerHandler(bot, db, ledgerService) {
+module.exports = function registerLedgerHandler(bot, deps) {
 
+  const { ledgerService } = deps;
   const { getLedger } = ledgerService;
 
   bot.onText(/^\/ledger(@\w+)?(?: (\d+))?$/, (msg, match) => {
@@ -14,7 +15,7 @@ module.exports = function registerLedgerHandler(bot, db, ledgerService) {
 
       const rows = getLedger(limit, offset);
 
-      if (!rows.length) {
+      if (!rows || !rows.length) {
         bot.sendMessage(chatId, "No ledger entries found.");
         return;
       }

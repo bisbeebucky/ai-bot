@@ -1,16 +1,13 @@
-// handlers/whatif.js
+module.exports = function registerWhatIfHandler(bot, deps) {
 
-module.exports = function registerWhatIfHandler(bot, db, simulateCashflow) {
+  const { db, simulateCashflow } = deps;
 
-  // Fallback if no amount
-  bot.onText(/^\/whatif$/, (msg) => {
-    return bot.sendMessage(msg.chat.id, "Usage: /whatif 50");
-  });
+  bot.onText(/^\/whatif (\d+(\.\d+)?)$/, (msg, match) => {
 
-  bot.onText(/^\/whatif (-?\d+(\.\d+)?)/, (msg, match) => {
+    const chatId = msg.chat.id;   // ✅ keep this
+    const spend = Number(match[1]);
+
     try {
-
-      const amount = Number(match[1]);
 
       const checking = db.prepare(`
         SELECT id FROM accounts
@@ -18,7 +15,7 @@ module.exports = function registerWhatIfHandler(bot, db, simulateCashflow) {
       `).get();
 
       if (!checking) {
-        return bot.sendMessage(msg.chat.id, "Checking account not found.");
+        return bot.sendMessage(chatId, "assets:bank account not found.");
       }
 
       const balanceRow = db.prepare(`
@@ -29,40 +26,29 @@ module.exports = function registerWhatIfHandler(bot, db, simulateCashflow) {
 
       const currentBalance = Number(balanceRow?.balance) || 0;
 
-      const adjustedBalance = currentBalance - amount;
-
       const result = simulateCashflow(
         db,
-        adjustedBalance,
+        currentBalance - spend,
         checking.id,
         30
       );
 
-      const lowest = result?.lowestBalance ?? adjustedBalance;
+      let reply = `After spending ${spend.toFixed(2)}:\n`;
+      reply += `Lowest 30-day balance: ${result.lowestBalance.toFixed(2)}\n\n`;
 
-      let output = `🧪 What If Scenario\n\n`;
-
-      if (amount >= 0) {
-        output += `Simulated expense: $${amount.toLocaleString()}\n`;
+      if (result.lowestBalance < 0) {
+        reply += "⚠️ Overdraft risk detected.";
       } else {
-        output += `Simulated income: $${Math.abs(amount).toLocaleString()}\n`;
+        reply += "✅ No overdraft risk.";
       }
 
-      output += `New starting balance: $${adjustedBalance.toLocaleString()}\n`;
-      output += `Projected 30-Day Minimum: $${lowest.toLocaleString()}\n\n`;
-
-      if (lowest < 0) {
-        output += "⚠️ This would cause an overdraft within 30 days.";
-      } else {
-        output += "✅ No overdraft risk in the next 30 days.";
-      }
-
-      return bot.sendMessage(msg.chat.id, output);
+      bot.sendMessage(chatId, reply);
 
     } catch (err) {
       console.error("What-if error:", err);
-      bot.sendMessage(msg.chat.id, "What-if error.");
+      bot.sendMessage(chatId, "Simulation failed.");
     }
+
   });
 
 };
