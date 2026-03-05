@@ -1,6 +1,25 @@
 // services/ledgerService.js
+const crypto = require("crypto");
 
 module.exports = function createLedgerService(db) {
+  /* ===============================
+     SCHEMA SAFETY (hash support)
+  =============================== */
+
+  function ensureTransactionHashColumn() {
+    // Add column if missing
+    const cols = db.prepare(`PRAGMA table_info(transactions)`).all();
+    const hasHash = cols.some((c) => c.name === "hash");
+
+    if (!hasHash) {
+      db.exec(`ALTER TABLE transactions ADD COLUMN hash TEXT;`);
+    }
+
+    // Add unique index (safe even if some hashes are NULL)
+    db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_hash ON transactions(hash);`);
+  }
+
+  ensureTransactionHashColumn();
 
   /* ===============================
      ACCOUNT TYPE INFERENCE
@@ -15,13 +34,9 @@ module.exports = function createLedgerService(db) {
   }
 
   function getOrCreateAccount(accountName) {
-
-    const find = db.prepare(`
-      SELECT id FROM accounts WHERE name = ?
-    `);
-
-    let account = find.get(accountName);
-    if (account) return account.id;
+    const find = db.prepare(`SELECT id FROM accounts WHERE name = ?`);
+    const existing = find.get(accountName);
+    if (existing) return existing.id;
 
     const insert = db.prepare(`
       INSERT INTO accounts (name, type)
@@ -30,8 +45,33 @@ module.exports = function createLedgerService(db) {
 
     const type = inferAccountType(accountName);
     const result = insert.run(accountName, type);
-
     return result.lastInsertRowid;
+  }
+
+  /* ===============================
+     HASHING
+  =============================== */
+
+  function stablePostingsForHash(postings) {
+    // sort by account so hash is stable regardless of order
+    return postings
+      .map((p) => ({
+        account: String(p.account || "").trim(),
+        amount: Number(p.amount)
+      }))
+      .sort((a, b) => a.account.localeCompare(b.account));
+  }
+
+  function makeTxHash({ date, description, postings }) {
+    const payload = {
+      date: String(date),
+      description: String(description || "").trim(),
+      postings: stablePostingsForHash(postings),
+      // nonce prevents accidental duplicates if you enter exact same tx twice
+      nonce: crypto.randomUUID()
+    };
+
+    return crypto.createHash("sha256").update(JSON.stringify(payload)).digest("hex");
   }
 
   /* ===============================
@@ -39,26 +79,41 @@ module.exports = function createLedgerService(db) {
   =============================== */
 
   function addTransaction(transaction) {
+    if (!transaction || typeof transaction !== "object") {
+      throw new Error("Transaction must be an object.");
+    }
 
-    if (!transaction.postings || transaction.postings.length < 2) {
+    if (!transaction.date || typeof transaction.date !== "string") {
+      throw new Error("Transaction.date must be YYYY-MM-DD string.");
+    }
+
+    if (!transaction.description || typeof transaction.description !== "string") {
+      throw new Error("Transaction.description must be a string.");
+    }
+
+    if (!Array.isArray(transaction.postings) || transaction.postings.length < 2) {
       throw new Error("Transaction must contain at least two postings.");
     }
 
     for (const p of transaction.postings) {
-      if (typeof p.amount !== "number" || isNaN(p.amount)) {
+      if (!p || typeof p.account !== "string" || !p.account.trim()) {
+        throw new Error("Each posting must have an account string.");
+      }
+      if (typeof p.amount !== "number" || Number.isNaN(p.amount)) {
         throw new Error("Invalid posting amount.");
       }
     }
 
     const total = transaction.postings.reduce((sum, p) => sum + p.amount, 0);
-
     if (Math.abs(total) > 0.00001) {
       throw new Error("Transaction postings must balance to zero.");
     }
 
+    const hash = makeTxHash(transaction);
+
     const insertTransaction = db.prepare(`
-      INSERT INTO transactions (date, description)
-      VALUES (?, ?)
+      INSERT INTO transactions (date, description, hash)
+      VALUES (?, ?, ?)
     `);
 
     const insertPosting = db.prepare(`
@@ -67,27 +122,23 @@ module.exports = function createLedgerService(db) {
     `);
 
     const tx = db.transaction(() => {
-
-      const result = insertTransaction.run(
-        transaction.date,
-        transaction.description
-      );
-
+      const result = insertTransaction.run(transaction.date, transaction.description, hash);
       const transactionId = result.lastInsertRowid;
 
       for (const p of transaction.postings) {
         const accountId = getOrCreateAccount(p.account);
         insertPosting.run(transactionId, accountId, p.amount);
       }
+
+      return { transactionId, hash };
     });
 
-    tx();
+    return tx();
   }
 
   function deleteLastTransaction() {
-
     const last = db.prepare(`
-      SELECT id, date, description
+      SELECT id, hash, date, description
       FROM transactions
       ORDER BY id DESC
       LIMIT 1
@@ -95,16 +146,43 @@ module.exports = function createLedgerService(db) {
 
     if (!last) return null;
 
-    const tx = db.transaction(() => {
-      db.prepare(`DELETE FROM postings WHERE transaction_id = ?`)
-        .run(last.id);
+    db.transaction(() => {
+      db.prepare(`DELETE FROM postings WHERE transaction_id = ?`).run(last.id);
+      db.prepare(`DELETE FROM transactions WHERE id = ?`).run(last.id);
+    })();
 
-      db.prepare(`DELETE FROM transactions WHERE id = ?`)
-        .run(last.id);
-    });
-
-    tx();
     return last;
+  }
+
+  function getRecentTransactions(limit = 5) {
+    return db.prepare(`
+      SELECT id, hash, date, description
+      FROM transactions
+      ORDER BY id DESC
+      LIMIT ?
+    `).all(limit);
+  }
+
+  function deleteTransactionByHashPrefix(prefix) {
+    const p = String(prefix || "").trim();
+    if (!p) return null;
+
+    const row = db.prepare(`
+      SELECT id, hash, date, description
+      FROM transactions
+      WHERE hash LIKE ?
+      ORDER BY id DESC
+      LIMIT 1
+    `).get(`${p}%`);
+
+    if (!row) return null;
+
+    db.transaction(() => {
+      db.prepare(`DELETE FROM postings WHERE transaction_id = ?`).run(row.id);
+      db.prepare(`DELETE FROM transactions WHERE id = ?`).run(row.id);
+    })();
+
+    return row;
   }
 
   /* ===============================
@@ -112,10 +190,10 @@ module.exports = function createLedgerService(db) {
   =============================== */
 
   function getLedger(limit = 20, offset = 0) {
-
     const rows = db.prepare(`
       SELECT
         t.id as transaction_id,
+        t.hash as hash,
         t.date,
         t.description,
         a.name as account,
@@ -127,8 +205,9 @@ module.exports = function createLedgerService(db) {
       LIMIT ? OFFSET ?
     `).all(limit, offset);
 
-    return rows.map(r => ({
+    return rows.map((r) => ({
       transactionId: r.transaction_id,
+      hash: r.hash,
       date: r.date,
       description: r.description,
       account: r.account,
@@ -137,24 +216,23 @@ module.exports = function createLedgerService(db) {
   }
 
   function getBalances() {
-
     const rows = db.prepare(`
       SELECT
         a.name as account,
-        SUM(p.amount) as balance
+        IFNULL(SUM(p.amount), 0) as balance
       FROM accounts a
-      JOIN postings p ON p.account_id = a.id
+      LEFT JOIN postings p ON p.account_id = a.id
       GROUP BY a.id
+      ORDER BY a.name
     `).all();
 
-    return rows.map(r => ({
+    return rows.map((r) => ({
       account: r.account,
       balance: Number(r.balance) || 0
     }));
   }
 
   function getLast30DayTotals() {
-
     const rows = db.prepare(`
       SELECT
         a.type as type,
@@ -162,12 +240,12 @@ module.exports = function createLedgerService(db) {
       FROM transactions t
       JOIN postings p ON p.transaction_id = t.id
       JOIN accounts a ON a.id = p.account_id
-      WHERE t.date >= date('now', '-30 days')
+      WHERE date(t.date) >= date('now', '-30 days')
         AND (a.type = 'INCOME' OR a.type = 'EXPENSES')
       GROUP BY a.type
     `).all();
 
-    return rows.map(r => ({
+    return rows.map((r) => ({
       type: r.type,
       total: Math.abs(Number(r.total) || 0)
     }));
@@ -176,6 +254,8 @@ module.exports = function createLedgerService(db) {
   return {
     addTransaction,
     deleteLastTransaction,
+    deleteTransactionByHashPrefix,
+    getRecentTransactions,
     getLedger,
     getBalances,
     getLast30DayTotals

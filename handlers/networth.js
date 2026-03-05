@@ -1,25 +1,33 @@
 module.exports = function registerNetWorthHandler(bot, deps) {
+  const { ledgerService } = deps;
 
   bot.onText(/^\/networth(@\w+)?$/, (msg) => {
+    const chatId = msg.chat.id;
+
     try {
+      const balances = ledgerService.getBalances();
 
-      const result = deps.financeEngine.calculateNetWorth();
+      let assets = 0;
+      let liabilities = 0;
 
-      const assets = result.assets || 0;
-      const liabilities = result.liabilities || 0;
-      const netWorth = result.netWorth || 0;
+      for (const b of balances) {
+        const amt = Number(b.balance) || 0;
+        if (String(b.account).startsWith("assets:")) assets += amt;
+        if (String(b.account).startsWith("liabilities:")) liabilities += amt;
+      }
 
-      let output = "💰 Net Worth\n\n";
-      output += `Assets: ${assets.toFixed(2)}\n`;
-      output += `Liabilities: ${liabilities.toFixed(2)}\n`;
-      output += `Net Worth: ${netWorth.toFixed(2)}\n`;
+      const netWorth = assets - liabilities;
 
-      bot.sendMessage(msg.chat.id, output);
+      const out =
+        `🏛️ Net Worth\n\n` +
+        `Assets: $${assets.toFixed(2)}\n` +
+        `Liabilities: $${liabilities.toFixed(2)}\n\n` +
+        `Net Worth: $${netWorth.toFixed(2)}`;
 
+      return bot.sendMessage(chatId, out);
     } catch (err) {
-      console.error("Net worth error:", err);
-      bot.sendMessage(msg.chat.id, "Error calculating net worth.");
+      console.error("Networth error:", err);
+      return bot.sendMessage(chatId, "Net worth error.");
     }
   });
-
 };

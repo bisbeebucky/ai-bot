@@ -24,8 +24,16 @@ function initDb() {
 
     CREATE TABLE IF NOT EXISTS transactions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      hash TEXT UNIQUE NOT NULL,
       date TEXT NOT NULL,
       description TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS transaction_hashes (
+      transaction_id INTEGER UNIQUE NOT NULL,
+      hash TEXT UNIQUE NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (transaction_id) REFERENCES transactions(id)
     );
 
     CREATE TABLE IF NOT EXISTS postings (
