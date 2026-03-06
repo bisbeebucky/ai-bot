@@ -19,6 +19,9 @@ This bot provides personal finance tracking, forecasting, debt planning, and ret
 | `/status` | Financial dashboard summary | `/status` |
 | `/money` | Financial snapshot | `/money` |
 | `/financial_health` | Financial scorecard | `/financial_health` |
+| `/status` | Financial dashboard summary | `/status` |
+| `/financial_health` | Financial scorecard | `/financial_health` |
+| `/money` | Financial snapshot | `/money` |
 
 ---
 
@@ -32,6 +35,7 @@ This bot provides personal finance tracking, forecasting, debt planning, and ret
 | `/upcoming` | Show upcoming recurring events | `/upcoming bill 60 25` |
 | `/year_projection` | 12-month projection using recurring cashflow | `/year_projection` |
 
+
 ---
 
 # Recurring Transactions
@@ -43,6 +47,16 @@ This bot provides personal finance tracking, forecasting, debt planning, and ret
 | `/recurring_list` | List recurring items | `/recurring_list` |
 | `/recurring_delete` | Delete recurring item | `/recurring_delete 3` |
 | `/runrecurring` | Run recurring transactions now | `/runrecurring` |
+
+---
+
+# Retirement / FI
+
+| Command | Description | Example |
+|-------|-------------|--------|
+| `/retirement` | Retirement target projection | `/retirement 500 7 1000000` |
+| `/retirement_auto` | Retirement projection using recurring surplus | `/retirement_auto 7 1000000` |
+| `/retirement_fi` | Financial Independence projection using the 4% rule | `/retirement_fi 7` |
 
 ---
 
@@ -91,6 +105,7 @@ This bot provides personal finance tracking, forecasting, debt planning, and ret
 | Command | Description | Example |
 |-------|-------------|--------|
 | `/botstatus` | Local bot runtime status | `/botstatus` |
+| `/ocstatus` | OpenClaw runtime status | `/ocstatus` |
 
 ---
 
