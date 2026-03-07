@@ -57,6 +57,19 @@ module.exports = function registerFutureHandler(bot, deps) {
     };
   }
 
+  function getMonthlyExpenses() {
+    const row = db.prepare(`
+      SELECT IFNULL(SUM(p.amount), 0) as total
+      FROM transactions t
+      JOIN postings p ON p.transaction_id = t.id
+      JOIN accounts a ON a.id = p.account_id
+      WHERE strftime('%Y-%m', t.date) = strftime('%Y-%m', 'now')
+        AND a.type = 'EXPENSES'
+    `).get();
+
+    return Math.abs(Number(row?.total) || 0);
+  }
+
   function getDebtRows() {
     return db.prepare(`
       SELECT name, balance, apr, minimum
@@ -77,7 +90,10 @@ module.exports = function registerFutureHandler(bot, deps) {
     for (let i = 0; i <= monthsToShow; i++) {
       const x = new Date(d.getFullYear(), d.getMonth() + i, 1);
       labels.push(
-        x.toLocaleString("en-US", { month: "short" })
+        x.toLocaleString("en-US", {
+          month: "short",
+          year: i === 0 ? undefined : "2-digit"
+        })
       );
     }
 
@@ -177,23 +193,46 @@ module.exports = function registerFutureHandler(bot, deps) {
     return { series, payoffMonths };
   }
 
-  bot.onText(/^\/(future|life_projection_graph)(@\w+)?$/i, async (msg) => {
+  function simulateFIMonths(startBalance, monthlySave, annualReturn, fiTarget) {
+    if (monthlySave <= 0 || fiTarget <= 0) return null;
+    if (startBalance >= fiTarget) return 0;
+
+    const monthlyRate = annualReturn / 100 / 12;
+    let balance = startBalance;
+    let months = 0;
+
+    while (balance < fiTarget && months < 1200) {
+      balance = balance * (1 + monthlyRate) + monthlySave;
+      months += 1;
+    }
+
+    return months >= 1200 ? null : months;
+  }
+
+  bot.onText(/^\/(future|life_projection_graph)(?:@\w+)?(?:\s+(\d{1,2}))?$/i, async (msg, match) => {
     const chatId = msg.chat.id;
 
     try {
+      const horizon = match[2] ? Number(match[2]) : 12;
+
+      if (!Number.isInteger(horizon) || horizon < 1 || horizon > 60) {
+        return bot.sendMessage(chatId, "Usage: /future [months]\nExample: /future 24");
+      }
+
       const bankBalance = getBankBalance();
       const recurring = getRecurringMonthlyNet();
       const debtRows = getDebtRows();
+      const monthlyExpenses = getMonthlyExpenses();
 
-      const labels = monthLabels(12);
+      const labels = monthLabels(horizon);
 
       const cashSeries = [bankBalance];
-      for (let i = 1; i <= 12; i++) {
+      for (let i = 1; i <= horizon; i++) {
         cashSeries.push(bankBalance + recurring.net * i);
       }
 
       const debtExtra = Math.max(0, recurring.net);
-      const debtResult = simulateDebtSeries(debtRows, "avalanche", debtExtra, 12);
+      const debtResult = simulateDebtSeries(debtRows, "avalanche", debtExtra, horizon);
       const debtSeries = debtResult.series;
 
       const netWorthSeries = cashSeries.map((cash, i) => {
@@ -210,6 +249,24 @@ module.exports = function registerFutureHandler(bot, deps) {
         debtFreeMarker[debtResult.payoffMonths] = debtSeries[debtResult.payoffMonths];
       }
 
+      const annualExpenses = monthlyExpenses * 12;
+      const fiTarget = annualExpenses > 0 ? annualExpenses * 25 : 0;
+      const fiMonths = simulateFIMonths(
+        bankBalance,
+        Math.max(0, recurring.net),
+        7,
+        fiTarget
+      );
+
+      const fiMarker = netWorthSeries.map(() => null);
+      if (
+        typeof fiMonths === "number" &&
+        fiMonths >= 0 &&
+        fiMonths < netWorthSeries.length
+      ) {
+        fiMarker[fiMonths] = netWorthSeries[fiMonths];
+      }
+
       const minY = Math.min(...cashSeries, ...debtSeries, ...netWorthSeries);
       const maxY = Math.max(...cashSeries, ...debtSeries, ...netWorthSeries);
 
@@ -223,6 +280,11 @@ module.exports = function registerFutureHandler(bot, deps) {
         height: 600,
         backgroundColour: "#0f172a"
       });
+
+      const maxTicks =
+        horizon <= 12 ? horizon + 1 :
+          horizon <= 24 ? 13 :
+            10;
 
       const configuration = {
         type: "line",
@@ -262,6 +324,14 @@ module.exports = function registerFutureHandler(bot, deps) {
               pointRadius: 8,
               pointHoverRadius: 10,
               pointBorderWidth: 2
+            },
+            {
+              label: "FI Point",
+              data: fiMarker,
+              showLine: false,
+              pointRadius: 8,
+              pointHoverRadius: 10,
+              pointBorderWidth: 2
             }
           ]
         },
@@ -281,7 +351,7 @@ module.exports = function registerFutureHandler(bot, deps) {
               ticks: {
                 color: "#ffffff",
                 font: { size: 18 },
-                maxTicksLimit: 13
+                maxTicksLimit: maxTicks
               },
               grid: {
                 color: "rgba(255,255,255,0.08)"
@@ -317,19 +387,30 @@ module.exports = function registerFutureHandler(bot, deps) {
       if (debtRows.length === 0) {
         debtPayoffText = "Already debt-free";
       } else if (debtResult.payoffMonths == null) {
-        debtPayoffText = "Debt not paid off within 12 months";
+        debtPayoffText = `Debt not paid off within ${horizon} months`;
       } else {
         debtPayoffText = `Debt-free by ${futureMonthLabel(debtResult.payoffMonths)}`;
+      }
+
+      let fiText;
+      if (fiTarget <= 0 || fiMonths == null) {
+        fiText = "FI not available";
+      } else if (fiMonths > horizon) {
+        fiText = `FI beyond ${horizon} months`;
+      } else {
+        fiText = `FI by ${futureMonthLabel(fiMonths)}`;
       }
 
       const finalNetWorth = netWorthSeries[netWorthSeries.length - 1];
 
       let summary = "🔮 Financial Future\n\n";
+      summary += `Horizon: ${horizon} month(s)\n`;
       summary += `Cash Now: ${money(bankBalance)}\n`;
       summary += `Recurring Net: ${recurring.net >= 0 ? "+" : "-"}${money(Math.abs(recurring.net))} / month\n`;
-      summary += `12-Month Cash: ${money(cashSeries[cashSeries.length - 1])}\n`;
-      summary += `12-Month Net Worth: ${money(finalNetWorth)}\n`;
-      summary += `${debtPayoffText}`;
+      summary += `${horizon}-Month Cash: ${money(cashSeries[cashSeries.length - 1])}\n`;
+      summary += `${horizon}-Month Net Worth: ${money(finalNetWorth)}\n`;
+      summary += `${debtPayoffText}\n`;
+      summary += `${fiText}`;
 
       return bot.sendMessage(chatId, summary);
     } catch (err) {
