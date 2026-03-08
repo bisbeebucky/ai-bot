@@ -1,27 +1,26 @@
 // core/simulation.js
 function simulateCashflow(db, startingBalance, accountId, days = 30) {
   const today = new Date();
-  const timeline = [];
-  let balance = Number(startingBalance) || 0;
-  let lowestBalance = balance;
+  today.setHours(0, 0, 0, 0);
 
   const end = new Date(today);
   end.setDate(end.getDate() + days);
+  end.setHours(23, 59, 59, 999);
 
-  // Load recurring rules from NEW schema
+  const events = [];
+  let balance = Number(startingBalance) || 0;
+  let lowestBalance = balance;
+
   const recurring = db.prepare(`
     SELECT id, description, postings_json, frequency, next_due_date
     FROM recurring_transactions
   `).all();
 
   for (const r of recurring) {
-    // Validate next_due_date
-    let due = new Date(r.next_due_date);
-    if (isNaN(due.getTime())) continue;
+    let due = parseYMD(r.next_due_date);
+    if (!due) continue;
 
-    // Walk occurrences up to end date (do NOT mutate DB)
     while (due <= end) {
-      // Only add events that occur after "today"
       if (due > today) {
         let postings;
         try {
@@ -31,13 +30,10 @@ function simulateCashflow(db, startingBalance, accountId, days = 30) {
         }
 
         if (Array.isArray(postings)) {
-          // Apply postings to the target accountId
-          for (const p of postings) {
-            // p can be {account, amount} or {account_id, amount}
-            const pAccountId = p.account_id;
+          let eventAmount = 0;
 
-            // If posting references by name, we can resolve it once here if needed
-            let resolvedAccountId = pAccountId;
+          for (const p of postings) {
+            let resolvedAccountId = p.account_id;
 
             if (!resolvedAccountId && typeof p.account === "string") {
               const row = db
@@ -47,31 +43,68 @@ function simulateCashflow(db, startingBalance, accountId, days = 30) {
             }
 
             if (resolvedAccountId === accountId) {
-              const amt = Number(p.amount) || 0;
-              balance += amt;
-              if (balance < lowestBalance) lowestBalance = balance;
+              eventAmount += Number(p.amount) || 0;
             }
           }
 
-          timeline.push({
-            date: due.toISOString().slice(0, 10),
-            description: r.description,
-            balance
-          });
+          if (eventAmount !== 0) {
+            events.push({
+              date: ymd(due),
+              description: r.description,
+              amount: eventAmount
+            });
+          }
         }
       }
 
-      // advance to next occurrence
       due = nextDueDate(due, r.frequency);
       if (!due) break;
     }
   }
 
+  // Sort FIRST, then calculate running balances
+  events.sort((a, b) => {
+    const byDate = String(a.date).localeCompare(String(b.date));
+    if (byDate !== 0) return byDate;
+    return String(a.description || "").localeCompare(String(b.description || ""));
+  });
+
+  const timeline = [];
+
+  for (const event of events) {
+    balance += Number(event.amount) || 0;
+    if (balance < lowestBalance) lowestBalance = balance;
+
+    timeline.push({
+      date: event.date,
+      description: event.description,
+      amount: event.amount,
+      balance
+    });
+  }
+
   return { timeline, lowestBalance };
+}
+
+function parseYMD(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || "").trim());
+  if (!m) return null;
+
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  d.setHours(0, 0, 0, 0);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function ymd(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 function nextDueDate(dateObj, frequency) {
   const d = new Date(dateObj);
+  d.setHours(0, 0, 0, 0);
 
   switch ((frequency || "").toLowerCase()) {
     case "daily":
@@ -86,19 +119,20 @@ function nextDueDate(dateObj, frequency) {
       const day = d.getDate();
       d.setMonth(d.getMonth() + 1);
 
-      // handle month rollover (e.g., Jan 31 -> Feb)
       if (d.getDate() !== day) {
-        d.setDate(0); // last day of previous month
+        d.setDate(0);
       }
+      d.setHours(0, 0, 0, 0);
       return d;
     }
 
     case "yearly":
       d.setFullYear(d.getFullYear() + 1);
+      d.setHours(0, 0, 0, 0);
       return d;
 
     default:
-      return null; // unknown frequency
+      return null;
   }
 }
 

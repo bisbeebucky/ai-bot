@@ -21,10 +21,38 @@ I got paid 500
 
 Quick start:
 
-/money
-/status
-/future
-/milestones
+/money  
+/status  
+/forecastgraph  
+/future  
+/milestones  
+/rich
+
+---
+
+# Most Useful Commands
+
+These commands answer the most common financial questions quickly.
+
+| Question | Command |
+|--------|--------|
+| How much money do I have right now? | `/money` |
+| What will my balance look like soon? | `/forecastgraph` |
+| How much will I have after bills? | `/endmonth` |
+| How tight will things get before payday? | `/untilpayday` |
+| When is my lowest balance coming? | `/danger` |
+| Can I afford this purchase? | `/caniafford 150` |
+| What are my upcoming bills? | `/upcoming bill` |
+| What is my overall financial health? | `/financial_health` |
+| What does my long-term wealth path look like? | `/rich` |
+
+Quick start:
+
+/money  
+/status  
+/forecastgraph  
+/future  
+/milestones  
 /rich
 
 ---
@@ -37,8 +65,8 @@ Quick start:
 | `/deposit` | Add money to bank | `/deposit 500 paycheck` |
 | `/withdraw` | Remove money from bank | `/withdraw 50 cash` |
 | `/balance` | Show bank balance | `/balance` |
-| `/savings` | Save money to savings | `/savings 50` |
-| `/savings` | Show bank savings balance | `/savings' |
+| `/save` | Save money to savings | `/save 50` |
+| `/savings` | Show bank savings balance | `/savings` |
 | `/accounts` | List account balances | `/accounts` |
 | `/networth` | Show assets minus liabilities | `/networth` |
 | `/history` | Show recent transactions | `/history` |
@@ -58,6 +86,7 @@ Quick start:
 | `/milestones` | Key financial milestones | `/milestones` |
 | `/milestones_graph` | Visual timeline of milestones | `/milestones_graph` |
 | `/rich` | Long-term wealth timeline ($50k → $1M) | `/rich` |
+| `/buckets` | Snapshot of cash, savings, debt and net worth | `/buckets` |
 
 ---
 
@@ -75,8 +104,11 @@ Quick start:
 
 | Command | Description | Example |
 |-------|-------------|--------|
-| `/forecast` | Text forecast of upcoming balance | `/forecast` |
+| `/forecast` | Text forecast of upcoming balance changes | `/forecast` |
 | `/forecastgraph` | 30-day balance projection chart | `/forecastgraph` |
+| `/endmonth` | Project balance after the next 30 days of recurring income and bills | `/endmonth` |
+| `/untilpayday` | Shows the lowest balance before the next income arrives | `/untilpayday` |
+| `/danger` | Shows the date and event where your balance is lowest | `/danger` |
 | `/whatif` | Simulate balance with a hypothetical spend | `/whatif 50` |
 | `/upcoming` | Show upcoming recurring events | `/upcoming bill 60 25` |
 | `/year_projection` | 12-month projection using recurring cashflow | `/year_projection` |
@@ -104,6 +136,7 @@ Quick start:
 | `/burnrate` | Monthly spending vs income and runway | `/burnrate` |
 | `/cashflow` | Recurring monthly income vs bills | `/cashflow` |
 | `/cashflow_detail` | Recurring cashflow breakdown | `/cashflow_detail` |
+| `/summary` | 30-day spending breakdown by category | `/summary` |
 
 ---
 
