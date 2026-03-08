@@ -6,6 +6,16 @@ module.exports = function registerAutopilotHandler(bot, deps) {
     return `$${(Number(n) || 0).toFixed(2)}`;
   }
 
+  function monthlyMultiplier(freq) {
+    switch ((freq || "").toLowerCase()) {
+      case "daily": return 30;
+      case "weekly": return 4.33;
+      case "monthly": return 1;
+      case "yearly": return 1 / 12;
+      default: return 0;
+    }
+  }
+
   function getRecurringMonthlyNet() {
     const rows = db.prepare(`
       SELECT postings_json, frequency
@@ -14,16 +24,6 @@ module.exports = function registerAutopilotHandler(bot, deps) {
 
     let income = 0;
     let bills = 0;
-
-    function monthlyMultiplier(freq) {
-      switch ((freq || "").toLowerCase()) {
-        case "daily": return 30;
-        case "weekly": return 4.33;
-        case "monthly": return 1;
-        case "yearly": return 1 / 12;
-        default: return 0;
-      }
-    }
 
     for (const r of rows) {
       try {
@@ -142,10 +142,9 @@ module.exports = function registerAutopilotHandler(bot, deps) {
     return { months, interest: totalInterest };
   }
 
-  function chooseBestExtra(debtRows, monthlyNet, lowestAhead, bank, savings) {
+  function chooseBestExtra(debtRows, monthlyNet, lowestAhead, savings) {
     if (!debtRows.length || monthlyNet <= 0) return null;
 
-    // conservative cap if cash is tight
     let safeCap = monthlyNet;
 
     if (lowestAhead < 100) {
@@ -177,9 +176,8 @@ module.exports = function registerAutopilotHandler(bot, deps) {
       });
     }
 
-    if (points.length < 2) {
-      return points[0]?.extra || null;
-    }
+    if (points.length === 0) return null;
+    if (points.length === 1) return points[0].extra;
 
     let bestJump = null;
 
@@ -189,8 +187,7 @@ module.exports = function registerAutopilotHandler(bot, deps) {
 
       const monthsSaved = prev.months - curr.months;
       const interestSaved = prev.interest - curr.interest;
-
-      const score = (monthsSaved * 100) + interestSaved / 10;
+      const score = (monthsSaved * 100) + (interestSaved / 10);
 
       const jump = {
         from: prev.extra,
@@ -206,6 +203,18 @@ module.exports = function registerAutopilotHandler(bot, deps) {
     }
 
     return bestJump ? bestJump.to : points[0].extra;
+  }
+
+  function findTargetDebt(debtRows) {
+    if (!debtRows.length) return null;
+
+    const sorted = [...debtRows].sort((a, b) => {
+      const aprDiff = b.apr - a.apr;
+      if (aprDiff !== 0) return aprDiff;
+      return a.balance - b.balance;
+    });
+
+    return sorted[0];
   }
 
   bot.onText(/^\/autopilot(@\w+)?$/i, (msg) => {
@@ -236,6 +245,7 @@ module.exports = function registerAutopilotHandler(bot, deps) {
       const lowest = Number(sim.lowestBalance) || 0;
 
       const debtRows = getDebtRows();
+      const targetDebt = findTargetDebt(debtRows);
       const debt = debtRows.reduce((sum, d) => sum + d.balance, 0);
       const monthlyNet = getRecurringMonthlyNet();
 
@@ -243,7 +253,6 @@ module.exports = function registerAutopilotHandler(bot, deps) {
         debtRows,
         monthlyNet,
         lowest,
-        bank,
         savings
       );
 
@@ -265,11 +274,19 @@ module.exports = function registerAutopilotHandler(bot, deps) {
       } else if (debt > 0 && monthlyNet > 0) {
         mode = "Attack Debt";
         reason = `You have ${money(debt)} in debt and positive recurring cashflow.`;
-        if (recommendedExtra) {
-          action = `Recommended extra debt payment: ${money(recommendedExtra)} per month toward highest APR debt.`;
+
+        if (targetDebt && recommendedExtra) {
+          action =
+            `Target: ${targetDebt.name} (${targetDebt.apr}% APR)\n` +
+            `Recommended extra payment: ${money(recommendedExtra)} per month.`;
+        } else if (targetDebt) {
+          action =
+            `Target: ${targetDebt.name} (${targetDebt.apr}% APR)\n` +
+            `Direct available surplus toward this debt.`;
         } else {
           action = "Direct available surplus toward highest APR debt.";
         }
+
         nextStep = "Use /best_extra and /debt_compare_range_graph for fine tuning.";
       } else if (savings < 1000) {
         mode = "Build Emergency Fund";
