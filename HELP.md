@@ -139,6 +139,11 @@ Quick start:
 | `/summary` | 30-day spending breakdown by category | `/summary` |
 | `/summary` | 30-day spending breakdown by category | `/summary` |
 | `/budget` | Budget versus actual spending (30 days) | `/budget` |
+| `/summary` | 30-day spending breakdown by category | `/summary` |
+| `/budget` | Budget versus actual spending (30 days) | `/budget` |
+| `/budget_set` | Set a category budget | `/budget_set food 1000` |
+| `/budget_list` | List saved budgets | `/budget_list` |
+| `/budget_delete` | Delete a category budget | `/budget_delete food` |
 
 ---
 
