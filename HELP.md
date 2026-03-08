@@ -87,6 +87,8 @@ Quick start:
 | `/milestones_graph` | Visual timeline of milestones | `/milestones_graph` |
 | `/rich` | Long-term wealth timeline ($50k → $1M) | `/rich` |
 | `/buckets` | Snapshot of cash, savings, debt and net worth | `/buckets` |
+| `/dashboard` | Full financial snapshot | `/dashboard` |
+| `/today` | Daily money snapshot | `/today` |
 
 ---
 
