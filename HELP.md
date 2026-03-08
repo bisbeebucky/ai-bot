@@ -137,6 +137,8 @@ Quick start:
 | `/cashflow` | Recurring monthly income vs bills | `/cashflow` |
 | `/cashflow_detail` | Recurring cashflow breakdown | `/cashflow_detail` |
 | `/summary` | 30-day spending breakdown by category | `/summary` |
+| `/summary` | 30-day spending breakdown by category | `/summary` |
+| `/budget` | Budget versus actual spending (30 days) | `/budget` |
 
 ---
 
