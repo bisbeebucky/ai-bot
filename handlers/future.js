@@ -2,7 +2,7 @@
 const { ChartJSNodeCanvas } = require("chartjs-node-canvas");
 
 module.exports = function registerFutureHandler(bot, deps) {
-  const { db, format, finance } = deps;
+  const { ledgerService, format, finance, debtProjection } = deps;
   const { formatMoney } = format;
   const {
     futureMonthLabel,
@@ -12,6 +12,7 @@ module.exports = function registerFutureHandler(bot, deps) {
     getDebtRows,
     simulateFIMonths
   } = finance;
+  const { simulateDebtSeries } = debtProjection;
 
   function monthLabels(monthsToShow = 12) {
     const labels = [];
@@ -29,92 +30,6 @@ module.exports = function registerFutureHandler(bot, deps) {
     }
 
     return labels;
-  }
-
-  function simulateDebtSeries(rows, mode, extra, monthsToShow = 12) {
-    const debts = rows.map((r) => ({ ...r }));
-
-    function sortDebts(arr) {
-      if (mode === "snowball") {
-        arr.sort((a, b) => {
-          const balDiff = a.balance - b.balance;
-          if (balDiff !== 0) return balDiff;
-          return b.apr - a.apr;
-        });
-      } else {
-        arr.sort((a, b) => {
-          const aprDiff = b.apr - a.apr;
-          if (aprDiff !== 0) return aprDiff;
-          return a.balance - b.balance;
-        });
-      }
-    }
-
-    function activeDebts() {
-      return debts.filter((d) => d.balance > 0.005);
-    }
-
-    const totalMinimums = debts.reduce((sum, d) => sum + d.minimum, 0);
-    const monthlyBudget = totalMinimums + extra;
-
-    const series = [debts.reduce((sum, d) => sum + d.balance, 0)];
-
-    if (debts.length === 0 || monthlyBudget <= 0) {
-      while (series.length < monthsToShow + 1) series.push(0);
-      return { series, payoffMonths: 0 };
-    }
-
-    let months = 0;
-    let payoffMonths = null;
-
-    while (months < monthsToShow) {
-      months += 1;
-
-      if (activeDebts().length > 0) {
-        for (const d of debts) {
-          if (d.balance <= 0.005) continue;
-          const monthlyRate = d.apr / 100 / 12;
-          d.balance += d.balance * monthlyRate;
-        }
-
-        const remaining = activeDebts();
-        sortDebts(remaining);
-
-        let paymentPool = monthlyBudget;
-
-        for (const d of remaining) {
-          if (paymentPool <= 0) break;
-          const minPay = Math.min(d.minimum, d.balance, paymentPool);
-          d.balance -= minPay;
-          paymentPool -= minPay;
-        }
-
-        let targets = activeDebts();
-        sortDebts(targets);
-
-        while (paymentPool > 0 && targets.length > 0) {
-          const target = targets[0];
-          const pay = Math.min(target.balance, paymentPool);
-          target.balance -= pay;
-          paymentPool -= pay;
-
-          targets = activeDebts();
-          sortDebts(targets);
-        }
-
-        for (const d of debts) {
-          if (d.balance < 0.005) d.balance = 0;
-        }
-
-        if (activeDebts().length === 0 && payoffMonths === null) {
-          payoffMonths = months;
-        }
-      }
-
-      series.push(debts.reduce((sum, d) => sum + d.balance, 0));
-    }
-
-    return { series, payoffMonths };
   }
 
   function renderHelp() {
@@ -161,11 +76,11 @@ module.exports = function registerFutureHandler(bot, deps) {
         );
       }
 
-      const starting = getStartingAssets(deps.ledgerService);
+      const starting = getStartingAssets(ledgerService);
       const startingAssets = starting.total;
-      const recurring = getRecurringMonthlyNet(db);
-      const debtRows = getDebtRows(db);
-      const monthlyExpenses = getMonthlyExpenses(db);
+      const recurring = getRecurringMonthlyNet(deps.db);
+      const debtRows = getDebtRows(deps.db);
+      const monthlyExpenses = getMonthlyExpenses(deps.db);
 
       const labels = monthLabels(horizon);
 
@@ -179,8 +94,8 @@ module.exports = function registerFutureHandler(bot, deps) {
       const debtSeries = debtResult.series;
 
       const netWorthSeries = cashSeries.map((cash, i) => {
-        const debt = Number(debtSeries[i]) || 0;
-        return cash - debt;
+        const debtAtPoint = Number(debtSeries[i]) || 0;
+        return cash - debtAtPoint;
       });
 
       const debtFreeMarker = debtSeries.map(() => null);
