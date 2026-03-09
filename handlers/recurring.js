@@ -2,7 +2,8 @@
 const crypto = require("crypto");
 
 module.exports = function registerRecurringHandler(bot, deps) {
-  const { db } = deps;
+  const { db, format } = deps;
+  const { formatMoney, renderTable, codeBlock } = format;
 
   // ---------------------------
   // Helpers
@@ -17,6 +18,14 @@ module.exports = function registerRecurringHandler(bot, deps) {
       return t.slice(1, -1).trim();
     }
     return t;
+  }
+
+  function isHelpArg(raw) {
+    return /^(help|--help|-h)$/i.test(String(raw || "").trim());
+  }
+
+  function sendMarkdown(chatId, text) {
+    return bot.sendMessage(chatId, text, { parse_mode: "Markdown" });
   }
 
   // Local date -> YYYY-MM-DD (NO toISOString)
@@ -39,9 +48,8 @@ module.exports = function registerRecurringHandler(bot, deps) {
   }
 
   function computeNextDueDate(frequency, monthlySpec) {
-    // monthlySpec: { kind:"day", day:1-31 } OR { kind:"last" } OR null
     const today = atMidday(new Date());
-    const freq = (frequency || "").toLowerCase();
+    const freq = String(frequency || "").toLowerCase();
 
     if (freq === "daily") {
       const d = atMidday(today);
@@ -74,10 +82,8 @@ module.exports = function registerRecurringHandler(bot, deps) {
         targetDay = Math.min(today.getDate(), lastDayOfMonth(year, month));
       }
 
-      // candidate in current month
       const candidate = atMidday(new Date(year, month, targetDay));
 
-      // If candidate already passed, schedule next month
       if (candidate < today) {
         const nextMonthFirst = new Date(year, month + 1, 1);
         const ny = nextMonthFirst.getFullYear();
@@ -113,167 +119,432 @@ module.exports = function registerRecurringHandler(bot, deps) {
       `${description}|${postings_json}|${frequency}|${next_due_date}`
     );
 
-    const stmt = db.prepare(`
+    db.prepare(`
       INSERT INTO recurring_transactions (hash, description, postings_json, frequency, next_due_date)
       VALUES (?, ?, ?, ?, ?)
-    `);
+    `).run(hash, description, postings_json, frequency, next_due_date);
 
-    stmt.run(hash, description, postings_json, frequency, next_due_date);
     return { hash, next_due_date };
+  }
+
+  function parseRecurringArgs(raw) {
+    const parsed = String(raw || "").trim().match(
+      /^(.+?)\s+(-?\d+(?:\.\d+)?)\s+(daily|weekly|monthly|yearly)(?:\s+(last|\d{1,2}))?$/i
+    );
+
+    if (!parsed) return null;
+
+    return {
+      description: stripQuotes(parsed[1]),
+      amount: Number(parsed[2]),
+      frequency: String(parsed[3] || "").toLowerCase(),
+      monthlyArg: parsed[4] ? String(parsed[4]) : null
+    };
+  }
+
+  function resolveMonthlySpec(frequency, monthlyArg, monthlyHelpText) {
+    let monthlySpec = null;
+
+    if (frequency === "monthly") {
+      if (!monthlyArg) {
+        monthlySpec = null;
+      } else if (String(monthlyArg).toLowerCase() === "last") {
+        monthlySpec = { kind: "last" };
+      } else {
+        const day = Number(monthlyArg);
+        if (!Number.isInteger(day) || day < 1 || day > 31) {
+          return {
+            error: monthlyHelpText
+          };
+        }
+        monthlySpec = { kind: "day", day };
+      }
+    }
+
+    return { monthlySpec };
+  }
+
+  function recurringHelp() {
+    return [
+      "*\\/recurring*",
+      "Add a recurring expense paid from `assets:bank` to `expenses:recurring`.",
+      "",
+      "*Usage*",
+      "- `/recurring <description> <amount> <daily|weekly|monthly|yearly>`",
+      "- `/recurring <description> <amount> monthly <day>`",
+      "- `/recurring <description> <amount> monthly last`",
+      "",
+      "*Arguments*",
+      "- `<description>` — Description, optionally quoted if it contains spaces.",
+      "- `<amount>` — Positive amount.",
+      "- `<daily|weekly|monthly|yearly>` — Frequency.",
+      "- `<day>` — For monthly items, an optional day from `1` to `31`, or `last`.",
+      "",
+      "*Examples*",
+      "- `/recurring rent 427 monthly 3`",
+      "- `/recurring \"Rent\" 427 monthly last`",
+      "- `/recurring gym 45 monthly 15`",
+      "- `/recurring spotify 11.99 monthly`",
+      "",
+      "*Notes*",
+      "- Expense recurring items credit `assets:bank` and debit `expenses:recurring`.",
+      "- If monthly day is omitted, today's day-of-month is used."
+    ].join("\n");
+  }
+
+  function recurringIncomeHelp() {
+    return [
+      "*\\/recurring_income*",
+      "Add recurring income flowing into `assets:bank` from `income:recurring`.",
+      "",
+      "*Usage*",
+      "- `/recurring_income <description> <amount> <daily|weekly|monthly|yearly>`",
+      "- `/recurring_income <description> <amount> monthly <day>`",
+      "- `/recurring_income <description> <amount> monthly last`",
+      "",
+      "*Arguments*",
+      "- `<description>` — Description, optionally quoted if it contains spaces.",
+      "- `<amount>` — Positive amount.",
+      "- `<daily|weekly|monthly|yearly>` — Frequency.",
+      "- `<day>` — For monthly items, an optional day from `1` to `31`, or `last`.",
+      "",
+      "*Examples*",
+      "- `/recurring_income paycheck 2500 biweekly`",
+      "- `/recurring_income \"Social Security\" 1500 monthly 3`",
+      "- `/recurring_income pension 1200 monthly last`",
+      "",
+      "*Notes*",
+      "- Income recurring items debit `assets:bank` and credit `income:recurring`."
+    ].replace("biweekly", "weekly").join ? "" : [
+      "*\\/recurring_income*",
+      "Add recurring income flowing into `assets:bank` from `income:recurring`.",
+      "",
+      "*Usage*",
+      "- `/recurring_income <description> <amount> <daily|weekly|monthly|yearly>`",
+      "- `/recurring_income <description> <amount> monthly <day>`",
+      "- `/recurring_income <description> <amount> monthly last`",
+      "",
+      "*Arguments*",
+      "- `<description>` — Description, optionally quoted if it contains spaces.",
+      "- `<amount>` — Positive amount.",
+      "- `<daily|weekly|monthly|yearly>` — Frequency.",
+      "- `<day>` — For monthly items, an optional day from `1` to `31`, or `last`.",
+      "",
+      "*Examples*",
+      "- `/recurring_income paycheck 2500 weekly`",
+      "- `/recurring_income \"Social Security\" 1500 monthly 3`",
+      "- `/recurring_income pension 1200 monthly last`",
+      "",
+      "*Notes*",
+      "- Income recurring items debit `assets:bank` and credit `income:recurring`."
+    ].join("\n");
+  }
+
+  function recurringListHelp() {
+    return [
+      "*\\/recurring_list*",
+      "List saved recurring items.",
+      "",
+      "*Usage*",
+      "- `/recurring_list`",
+      "",
+      "*Examples*",
+      "- `/recurring_list`",
+      "",
+      "*Notes*",
+      "- Shows the next due date and a short hash reference.",
+      "- Use `/recurring_delete <id|hash>` to remove an item."
+    ].join("\n");
+  }
+
+  function recurringDeleteHelp() {
+    return [
+      "*\\/recurring_delete*",
+      "Delete a recurring item by numeric id or hash prefix.",
+      "",
+      "*Usage*",
+      "- `/recurring_delete <id>`",
+      "- `/recurring_delete <hashPrefix>`",
+      "",
+      "*Arguments*",
+      "- `<id>` — Numeric recurring id from `/recurring_list`.",
+      "- `<hashPrefix>` — Leading characters from the recurring hash, usually 3 to 64 hex chars.",
+      "",
+      "*Examples*",
+      "- `/recurring_delete 3`",
+      "- `/recurring_delete a1b2c3`"
+    ].join("\n");
   }
 
   // ---------------------------
   // /recurring (EXPENSE)
   // ---------------------------
-  // /recurring "Rent" 427 monthly 3
-  // /recurring "Rent" 427 monthly last
-  bot.onText(
-    /^\/recurring\s+(.+?)\s+(\d+(\.\d+)?)\s+(daily|weekly|monthly|yearly)(?:\s+(last|\d{1,2}))?$/i,
-    (msg, match) => {
-      const chatId = msg.chat.id;
+  bot.onText(/^\/recurring(?:@\w+)?(?:\s+(.*))?$/i, (msg, match) => {
+    const chatId = msg.chat.id;
+    const raw = String(match?.[1] || "").trim();
 
-      try {
-        const description = stripQuotes(match[1]);
-        const amount = Number(match[2]);
-        const frequency = match[4].toLowerCase();
-        const monthlyArg = match[5];
-
-        if (!Number.isFinite(amount) || amount <= 0) {
-          return bot.sendMessage(chatId, "Amount must be a positive number.");
-        }
-
-        let monthlySpec = null;
-
-        if (frequency === "monthly") {
-          if (!monthlyArg) {
-            monthlySpec = null; // default: today's day
-          } else if (String(monthlyArg).toLowerCase() === "last") {
-            monthlySpec = { kind: "last" };
-          } else {
-            const day = Number(monthlyArg);
-            if (!Number.isInteger(day) || day < 1 || day > 31) {
-              return bot.sendMessage(
-                chatId,
-                "For monthly bills, use day 1-31 or 'last'.\nExamples:\n/recurring rent 427 monthly 3\n/recurring rent 427 monthly last"
-              );
-            }
-            monthlySpec = { kind: "day", day };
-          }
-        }
-
-        const nextDue = computeNextDueDate(frequency, monthlySpec);
-        if (!nextDue) return bot.sendMessage(chatId, "Invalid frequency.");
-
-        // Expense: money OUT of bank
-        const postings = [
-          { account: "assets:bank", amount: -amount },
-          { account: "expenses:recurring", amount: amount }
-        ];
-
-        const { hash, next_due_date } = insertRecurring({
-          description,
-          postings,
-          frequency,
-          nextDue
-        });
-
-        const extra =
-          frequency === "monthly" && monthlyArg ? ` (${monthlyArg})` : "";
-
-        return bot.sendMessage(
-          chatId,
-          `✅ Recurring bill added:\n${description} $${amount.toFixed(
-            2
-          )} ${frequency}${extra}\nNext due: ${next_due_date}\nRef: ${hash.slice(
-            0,
-            6
-          )}`
-        );
-      } catch (err) {
-        console.error("recurring add error:", err);
-        return bot.sendMessage(chatId, "Error adding recurring bill.");
-      }
+    if (!raw || isHelpArg(raw)) {
+      return sendMarkdown(chatId, recurringHelp());
     }
-  );
+
+    try {
+      const parsed = parseRecurringArgs(raw);
+
+      if (!parsed) {
+        return sendMarkdown(
+          chatId,
+          [
+            "Missing or invalid arguments for `/recurring`.",
+            "",
+            "Usage:",
+            "`/recurring <description> <amount> <daily|weekly|monthly|yearly> [day|last]`",
+            "",
+            "Examples:",
+            "`/recurring rent 427 monthly 3`",
+            "`/recurring \"Rent\" 427 monthly last`"
+          ].join("\n")
+        );
+      }
+
+      const { description, amount, frequency, monthlyArg } = parsed;
+
+      if (!description) {
+        return sendMarkdown(
+          chatId,
+          [
+            "Description is required.",
+            "",
+            "Usage:",
+            "`/recurring <description> <amount> <daily|weekly|monthly|yearly> [day|last]`"
+          ].join("\n")
+        );
+      }
+
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return sendMarkdown(
+          chatId,
+          [
+            "Amount must be a positive number.",
+            "",
+            "Usage:",
+            "`/recurring <description> <amount> <daily|weekly|monthly|yearly> [day|last]`"
+          ].join("\n")
+        );
+      }
+
+      const monthlyResolution = resolveMonthlySpec(
+        frequency,
+        monthlyArg,
+        [
+          "For monthly recurring expenses, use day `1-31` or `last`.",
+          "",
+          "Examples:",
+          "`/recurring rent 427 monthly 3`",
+          "`/recurring rent 427 monthly last`"
+        ].join("\n")
+      );
+
+      if (monthlyResolution.error) {
+        return sendMarkdown(chatId, monthlyResolution.error);
+      }
+
+      const nextDue = computeNextDueDate(frequency, monthlyResolution.monthlySpec);
+      if (!nextDue) {
+        return sendMarkdown(
+          chatId,
+          [
+            "Frequency must be one of: `daily`, `weekly`, `monthly`, `yearly`.",
+            "",
+            "Usage:",
+            "`/recurring <description> <amount> <daily|weekly|monthly|yearly> [day|last]`"
+          ].join("\n")
+        );
+      }
+
+      const postings = [
+        { account: "assets:bank", amount: -amount },
+        { account: "expenses:recurring", amount: amount }
+      ];
+
+      const { hash, next_due_date } = insertRecurring({
+        description,
+        postings,
+        frequency,
+        nextDue
+      });
+
+      const schedule =
+        frequency === "monthly" && monthlyArg
+          ? `${frequency} (${monthlyArg})`
+          : frequency;
+
+      return sendMarkdown(
+        chatId,
+        [
+          "✅ *Recurring expense added*",
+          "",
+          codeBlock([
+            `Description  ${description}`,
+            `Amount       ${formatMoney(amount)}`,
+            `Frequency    ${schedule}`,
+            `Next Due     ${next_due_date}`,
+            `Ref          ${hash.slice(0, 6)}`,
+            `Debit        expenses:recurring`,
+            `Credit       assets:bank`
+          ].join("\n"))
+        ].join("\n")
+      );
+    } catch (err) {
+      console.error("recurring add error:", err);
+      return bot.sendMessage(chatId, "Error adding recurring bill.");
+    }
+  });
 
   // ---------------------------
   // /recurring_income (INCOME)
   // ---------------------------
-  // /recurring_income "Social Security" 1500 monthly 3
-  bot.onText(
-    /^\/recurring_income\s+(.+?)\s+(\d+(\.\d+)?)\s+(daily|weekly|monthly|yearly)(?:\s+(last|\d{1,2}))?$/i,
-    (msg, match) => {
-      const chatId = msg.chat.id;
+  bot.onText(/^\/recurring_income(?:@\w+)?(?:\s+(.*))?$/i, (msg, match) => {
+    const chatId = msg.chat.id;
+    const raw = String(match?.[1] || "").trim();
 
-      try {
-        const description = stripQuotes(match[1]);
-        const amount = Number(match[2]);
-        const frequency = match[4].toLowerCase();
-        const monthlyArg = match[5];
-
-        if (!Number.isFinite(amount) || amount <= 0) {
-          return bot.sendMessage(chatId, "Amount must be a positive number.");
-        }
-
-        let monthlySpec = null;
-
-        if (frequency === "monthly") {
-          if (!monthlyArg) {
-            monthlySpec = null;
-          } else if (String(monthlyArg).toLowerCase() === "last") {
-            monthlySpec = { kind: "last" };
-          } else {
-            const day = Number(monthlyArg);
-            if (!Number.isInteger(day) || day < 1 || day > 31) {
-              return bot.sendMessage(
-                chatId,
-                "For monthly income, use day 1-31 or 'last'.\nExample:\n/recurring_income \"Social Security\" 1500 monthly 3"
-              );
-            }
-            monthlySpec = { kind: "day", day };
-          }
-        }
-
-        const nextDue = computeNextDueDate(frequency, monthlySpec);
-        if (!nextDue) return bot.sendMessage(chatId, "Invalid frequency.");
-
-        // Income: money INTO bank (assets +, income -)
-        const postings = [
-          { account: "assets:bank", amount: amount },
-          { account: "income:recurring", amount: -amount }
-        ];
-
-        const { hash, next_due_date } = insertRecurring({
-          description,
-          postings,
-          frequency,
-          nextDue
-        });
-
-        const extra =
-          frequency === "monthly" && monthlyArg ? ` (${monthlyArg})` : "";
-
-        return bot.sendMessage(
-          chatId,
-          `✅ Recurring income added:\n${description} $${amount.toFixed(
-            2
-          )} ${frequency}${extra}\nNext due: ${next_due_date}\nRef: ${hash.slice(
-            0,
-            6
-          )}`
-        );
-      } catch (err) {
-        console.error("recurring income add error:", err);
-        return bot.sendMessage(chatId, "Error adding recurring income.");
-      }
+    if (!raw || isHelpArg(raw)) {
+      return sendMarkdown(chatId, recurringIncomeHelp());
     }
-  );
+
+    try {
+      const parsed = parseRecurringArgs(raw);
+
+      if (!parsed) {
+        return sendMarkdown(
+          chatId,
+          [
+            "Missing or invalid arguments for `/recurring_income`.",
+            "",
+            "Usage:",
+            "`/recurring_income <description> <amount> <daily|weekly|monthly|yearly> [day|last]`",
+            "",
+            "Examples:",
+            "`/recurring_income paycheck 2500 weekly`",
+            "`/recurring_income \"Social Security\" 1500 monthly 3`"
+          ].join("\n")
+        );
+      }
+
+      const { description, amount, frequency, monthlyArg } = parsed;
+
+      if (!description) {
+        return sendMarkdown(
+          chatId,
+          [
+            "Description is required.",
+            "",
+            "Usage:",
+            "`/recurring_income <description> <amount> <daily|weekly|monthly|yearly> [day|last]`"
+          ].join("\n")
+        );
+      }
+
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return sendMarkdown(
+          chatId,
+          [
+            "Amount must be a positive number.",
+            "",
+            "Usage:",
+            "`/recurring_income <description> <amount> <daily|weekly|monthly|yearly> [day|last]`"
+          ].join("\n")
+        );
+      }
+
+      const monthlyResolution = resolveMonthlySpec(
+        frequency,
+        monthlyArg,
+        [
+          "For monthly recurring income, use day `1-31` or `last`.",
+          "",
+          "Example:",
+          "`/recurring_income \"Social Security\" 1500 monthly 3`"
+        ].join("\n")
+      );
+
+      if (monthlyResolution.error) {
+        return sendMarkdown(chatId, monthlyResolution.error);
+      }
+
+      const nextDue = computeNextDueDate(frequency, monthlyResolution.monthlySpec);
+      if (!nextDue) {
+        return sendMarkdown(
+          chatId,
+          [
+            "Frequency must be one of: `daily`, `weekly`, `monthly`, `yearly`.",
+            "",
+            "Usage:",
+            "`/recurring_income <description> <amount> <daily|weekly|monthly|yearly> [day|last]`"
+          ].join("\n")
+        );
+      }
+
+      const postings = [
+        { account: "assets:bank", amount: amount },
+        { account: "income:recurring", amount: -amount }
+      ];
+
+      const { hash, next_due_date } = insertRecurring({
+        description,
+        postings,
+        frequency,
+        nextDue
+      });
+
+      const schedule =
+        frequency === "monthly" && monthlyArg
+          ? `${frequency} (${monthlyArg})`
+          : frequency;
+
+      return sendMarkdown(
+        chatId,
+        [
+          "✅ *Recurring income added*",
+          "",
+          codeBlock([
+            `Description  ${description}`,
+            `Amount       ${formatMoney(amount)}`,
+            `Frequency    ${schedule}`,
+            `Next Due     ${next_due_date}`,
+            `Ref          ${hash.slice(0, 6)}`,
+            `Debit        assets:bank`,
+            `Credit       income:recurring`
+          ].join("\n"))
+        ].join("\n")
+      );
+    } catch (err) {
+      console.error("recurring income add error:", err);
+      return bot.sendMessage(chatId, "Error adding recurring income.");
+    }
+  });
 
   // ---------------------------
   // /recurring_list
   // ---------------------------
-  bot.onText(/^\/recurring_list(@\w+)?$/, (msg) => {
+  bot.onText(/^\/recurring_list(?:@\w+)?(?:\s+(.*))?$/i, (msg, match) => {
     const chatId = msg.chat.id;
+    const raw = String(match?.[1] || "").trim();
+
+    if (raw) {
+      if (isHelpArg(raw)) {
+        return sendMarkdown(chatId, recurringListHelp());
+      }
+
+      return sendMarkdown(
+        chatId,
+        [
+          "The `/recurring_list` command does not take arguments.",
+          "",
+          "Usage:",
+          "`/recurring_list`"
+        ].join("\n")
+      );
+    }
 
     try {
       const rows = db.prepare(`
@@ -283,35 +554,53 @@ module.exports = function registerRecurringHandler(bot, deps) {
         LIMIT 25
       `).all();
 
-      if (!rows.length) return bot.sendMessage(chatId, "No recurring items saved.");
+      if (!rows.length) {
+        return bot.sendMessage(chatId, "No recurring items saved.");
+      }
 
-      let out = "📌 Recurring\n\n";
-
-      for (const r of rows) {
-        let amt = 0;
+      const tableRows = rows.map((row) => {
+        let amount = 0;
         let direction = "unknown";
 
         try {
-          const postings = JSON.parse(r.postings_json);
+          const postings = JSON.parse(row.postings_json);
           const bankLine = Array.isArray(postings)
             ? postings.find((p) => p.account === "assets:bank")
             : null;
 
           if (bankLine) {
             const bankAmt = Number(bankLine.amount) || 0;
-            amt = Math.abs(bankAmt);
+            amount = Math.abs(bankAmt);
             direction = bankAmt >= 0 ? "income" : "bill";
           }
-        } catch { }
+        } catch (_) {
+          // ignore malformed postings_json
+        }
 
-        out += `#${r.id}  ${String(r.hash).slice(0, 6)}  ${r.description}  $${amt.toFixed(
-          2
-        )}  ${r.frequency}  next:${r.next_due_date}  (${direction})\n`;
-      }
+        return [
+          String(row.id),
+          String(row.hash).slice(0, 6),
+          String(row.description || ""),
+          formatMoney(amount),
+          String(row.frequency || ""),
+          String(row.next_due_date || ""),
+          direction
+        ];
+      });
 
-      out += `\nDelete: /recurring_delete <id|hash>\nExample: /recurring_delete 3\nExample: /recurring_delete a1b2c3`;
+      const out = [
+        "📌 *Recurring*",
+        "",
+        renderTable(
+          ["ID", "Ref", "Description", "Amount", "Freq", "Next Due", "Type"],
+          tableRows,
+          { aligns: ["right", "left", "left", "right", "left", "left", "left"] }
+        ),
+        "Delete: `/recurring_delete <id|hash>`",
+        "Examples: `/recurring_delete 3`, `/recurring_delete a1b2c3`"
+      ].join("\n");
 
-      return bot.sendMessage(chatId, out);
+      return sendMarkdown(chatId, out);
     } catch (err) {
       console.error("recurring list error:", err);
       return bot.sendMessage(chatId, "Error listing recurring items.");
@@ -321,49 +610,102 @@ module.exports = function registerRecurringHandler(bot, deps) {
   // ---------------------------
   // /recurring_delete <id|hashPrefix>
   // ---------------------------
-  bot.onText(
-    /^\/recurring_delete(@\w+)?\s+([0-9]+|[a-f0-9]{3,64})$/i,
-    (msg, match) => {
-      const chatId = msg.chat.id;
-      const token = match[2];
+  bot.onText(/^\/recurring_delete(?:@\w+)?(?:\s+(.*))?$/i, (msg, match) => {
+    const chatId = msg.chat.id;
+    const raw = String(match?.[1] || "").trim();
 
-      try {
-        let row = null;
-
-        if (/^\d+$/.test(token)) {
-          row = db.prepare(`
-            SELECT id, hash, description, next_due_date
-            FROM recurring_transactions
-            WHERE id = ?
-          `).get(Number(token));
-        } else {
-          row = db.prepare(`
-            SELECT id, hash, description, next_due_date
-            FROM recurring_transactions
-            WHERE hash LIKE ?
-            ORDER BY id DESC
-            LIMIT 1
-          `).get(`${token}%`);
-        }
-
-        if (!row) return bot.sendMessage(chatId, "Not found.");
-
-        db.transaction(() => {
-          db.prepare(`DELETE FROM recurring_events WHERE recurring_id = ?`).run(row.id);
-          db.prepare(`DELETE FROM recurring_transactions WHERE id = ?`).run(row.id);
-        })();
-
-        return bot.sendMessage(
-          chatId,
-          `🗑️ Deleted recurring: #${row.id} ${row.description} (ref ${String(row.hash).slice(
-            0,
-            6
-          )})`
-        );
-      } catch (err) {
-        console.error("recurring delete error:", err);
-        return bot.sendMessage(chatId, "Error deleting recurring item.");
-      }
+    if (!raw || isHelpArg(raw)) {
+      return sendMarkdown(chatId, recurringDeleteHelp());
     }
-  );
+
+    try {
+      const parsed = raw.match(/^([0-9]+|[a-f0-9]{3,64})$/i);
+
+      if (!parsed) {
+        return sendMarkdown(
+          chatId,
+          [
+            "Missing or invalid arguments for `/recurring_delete`.",
+            "",
+            "Usage:",
+            "`/recurring_delete <id|hashPrefix>`",
+            "",
+            "Examples:",
+            "`/recurring_delete 3`",
+            "`/recurring_delete a1b2c3`"
+          ].join("\n")
+        );
+      }
+
+      const token = parsed[1];
+      let row = null;
+
+      if (/^\d+$/.test(token)) {
+        row = db.prepare(`
+          SELECT id, hash, description, next_due_date
+          FROM recurring_transactions
+          WHERE id = ?
+        `).get(Number(token));
+      } else {
+        row = db.prepare(`
+          SELECT id, hash, description, next_due_date
+          FROM recurring_transactions
+          WHERE hash LIKE ?
+          ORDER BY id DESC
+          LIMIT 1
+        `).get(`${token}%`);
+      }
+
+      if (!row) {
+        return bot.sendMessage(chatId, "Not found.");
+      }
+
+      db.transaction(() => {
+        db.prepare(`DELETE FROM recurring_events WHERE recurring_id = ?`).run(row.id);
+        db.prepare(`DELETE FROM recurring_transactions WHERE id = ?`).run(row.id);
+      })();
+
+      return sendMarkdown(
+        chatId,
+        [
+          "🗑️ *Recurring item deleted*",
+          "",
+          codeBlock([
+            `ID          ${row.id}`,
+            `Ref         ${String(row.hash).slice(0, 6)}`,
+            `Description ${row.description}`,
+            `Next Due    ${row.next_due_date}`
+          ].join("\n"))
+        ].join("\n")
+      );
+    } catch (err) {
+      console.error("recurring delete error:", err);
+      return bot.sendMessage(chatId, "Error deleting recurring item.");
+    }
+  });
+};
+
+module.exports.help = {
+  command: "recurring",
+  category: "Recurring",
+  summary: "Add a recurring expense paid from assets:bank to expenses:recurring.",
+  usage: [
+    "/recurring <description> <amount> <daily|weekly|monthly|yearly>",
+    "/recurring <description> <amount> monthly <day>",
+    "/recurring <description> <amount> monthly last"
+  ],
+  args: [
+    { name: "<description>", description: "Description, optionally quoted if it contains spaces." },
+    { name: "<amount>", description: "Positive amount." },
+    { name: "<daily|weekly|monthly|yearly>", description: "Frequency." },
+    { name: "<day>", description: "Optional monthly day from 1 to 31, or `last`." }
+  ],
+  examples: [
+    "/recurring rent 427 monthly 3",
+    "/recurring \"Rent\" 427 monthly last",
+    "/recurring spotify 11.99 monthly"
+  ],
+  notes: [
+    "Related commands: `/recurring_income`, `/recurring_list`, `/recurring_delete`."
+  ]
 };

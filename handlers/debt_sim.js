@@ -1,13 +1,14 @@
 // handlers/debt_sim.js
 module.exports = function registerDebtSimHandler(bot, deps) {
-  const { db } = deps;
+  const { db, format } = deps;
+  const { formatMoney, renderTable, codeBlock } = format;
 
   function cloneDebts(rows) {
-    return rows.map((r) => ({
-      name: r.name,
-      balance: Number(r.balance) || 0,
-      apr: Number(r.apr) || 0,
-      minimum: Number(r.minimum) || 0,
+    return rows.map((row) => ({
+      name: String(row.name || ""),
+      balance: Number(row.balance) || 0,
+      apr: Number(row.apr) || 0,
+      minimum: Number(row.minimum) || 0,
       interestPaid: 0
     }));
   }
@@ -15,8 +16,8 @@ module.exports = function registerDebtSimHandler(bot, deps) {
   function sortDebts(debts, mode) {
     if (mode === "snowball") {
       debts.sort((a, b) => {
-        const balDiff = a.balance - b.balance;
-        if (balDiff !== 0) return balDiff;
+        const balanceDiff = a.balance - b.balance;
+        if (balanceDiff !== 0) return balanceDiff;
         return b.apr - a.apr;
       });
     } else {
@@ -29,17 +30,78 @@ module.exports = function registerDebtSimHandler(bot, deps) {
   }
 
   function activeDebts(debts) {
-    return debts.filter((d) => d.balance > 0.005);
+    return debts.filter((debt) => debt.balance > 0.005);
   }
 
-  bot.onText(/^\/debt_sim\s+(snowball|avalanche)\s+(\d+(\.\d+)?)$/i, (msg, match) => {
+  function renderHelp() {
+    return [
+      "*\\/debt_sim*",
+      "Simulate debt payoff over time using snowball or avalanche with an extra monthly payment.",
+      "",
+      "*Usage*",
+      "- `/debt_sim <snowball|avalanche> <extra>`",
+      "",
+      "*Arguments*",
+      "- `<snowball|avalanche>` — Strategy to simulate.",
+      "- `<extra>` — Extra monthly payment on top of minimums. Must be zero or greater.",
+      "",
+      "*Examples*",
+      "- `/debt_sim snowball 200`",
+      "- `/debt_sim avalanche 400`",
+      "",
+      "*Notes*",
+      "- Interest accrues monthly using each debt APR.",
+      "- Simulation stops after payoff or a 100-year safety cap."
+    ].join("\n");
+  }
+
+  function sendHelp(chatId) {
+    return bot.sendMessage(chatId, renderHelp(), {
+      parse_mode: "Markdown"
+    });
+  }
+
+  bot.onText(/^\/debt_sim(?:@\w+)?(?:\s+(.*))?$/i, (msg, match) => {
     const chatId = msg.chat.id;
-    const mode = String(match[1] || "").toLowerCase();
-    const extra = Number(match[2]);
+    const raw = String(match?.[1] || "").trim();
+
+    if (!raw || /^(help|--help|-h)$/i.test(raw)) {
+      return sendHelp(chatId);
+    }
 
     try {
+      const parsed = raw.match(/^(snowball|avalanche)\s+(-?\d+(?:\.\d+)?)$/i);
+
+      if (!parsed) {
+        return bot.sendMessage(
+          chatId,
+          [
+            "Missing or invalid arguments for `/debt_sim`.",
+            "",
+            "Usage:",
+            "`/debt_sim <snowball|avalanche> <extra>`",
+            "",
+            "Example:",
+            "`/debt_sim avalanche 250`"
+          ].join("\n"),
+          { parse_mode: "Markdown" }
+        );
+      }
+
+      const mode = String(parsed[1] || "").toLowerCase();
+      const extra = Number(parsed[2]);
+
       if (!Number.isFinite(extra) || extra < 0) {
-        return bot.sendMessage(chatId, "Usage: /debt_sim <snowball|avalanche> <extra>");
+        return bot.sendMessage(
+          chatId,
+          [
+            "Extra payment must be zero or greater.",
+            "",
+            "Usage:",
+            "`/debt_sim <snowball|avalanche> <extra>`"
+          ].join("\n"),
+          { parse_mode: "Markdown" }
+        );
       }
 
       const rows = db.prepare(`
@@ -52,8 +114,8 @@ module.exports = function registerDebtSimHandler(bot, deps) {
       }
 
       const debts = cloneDebts(rows);
-      const originalTotalDebt = debts.reduce((sum, d) => sum + d.balance, 0);
-      const totalMinimums = debts.reduce((sum, d) => sum + d.minimum, 0);
+      const originalTotalDebt = debts.reduce((sum, debt) => sum + debt.balance, 0);
+      const totalMinimums = debts.reduce((sum, debt) => sum + debt.minimum, 0);
       const monthlyBudget = totalMinimums + extra;
 
       if (monthlyBudget <= 0) {
@@ -62,94 +124,98 @@ module.exports = function registerDebtSimHandler(bot, deps) {
 
       let months = 0;
       let totalInterest = 0;
-      const payoffOrder = [];
       const payoffMoments = [];
 
-      // safety cap: 100 years
       while (activeDebts(debts).length > 0 && months < 1200) {
         months += 1;
 
-        // 1) accrue monthly interest
-        for (const d of debts) {
-          if (d.balance <= 0.005) continue;
+        for (const debt of debts) {
+          if (debt.balance <= 0.005) continue;
 
-          const monthlyRate = d.apr / 100 / 12;
-          const interest = d.balance * monthlyRate;
-          d.balance += interest;
-          d.interestPaid += interest;
+          const monthlyRate = debt.apr / 100 / 12;
+          const interest = debt.balance * monthlyRate;
+          debt.balance += interest;
+          debt.interestPaid += interest;
           totalInterest += interest;
         }
 
-        // 2) sort remaining debts according to strategy
         const remaining = activeDebts(debts);
         sortDebts(remaining, mode);
 
-        // 3) pay minimums first
         let paymentPool = monthlyBudget;
 
-        for (const d of remaining) {
+        for (const debt of remaining) {
           if (paymentPool <= 0) break;
 
-          const minPay = Math.min(d.minimum, d.balance, paymentPool);
-          d.balance -= minPay;
+          const minPay = Math.min(debt.minimum, debt.balance, paymentPool);
+          debt.balance -= minPay;
           paymentPool -= minPay;
         }
 
-        // 4) apply all extra leftover to target debt(s)
         let targets = activeDebts(debts);
         sortDebts(targets, mode);
 
         while (paymentPool > 0 && targets.length > 0) {
           const target = targets[0];
-          const pay = Math.min(target.balance, paymentPool);
-          target.balance -= pay;
-          paymentPool -= pay;
+          const payment = Math.min(target.balance, paymentPool);
+          target.balance -= payment;
+          paymentPool -= payment;
 
           targets = activeDebts(debts);
           sortDebts(targets, mode);
         }
 
-        // 5) record newly paid off debts
-        for (const d of debts) {
-          if (d.balance <= 0.005 && !payoffOrder.includes(d.name)) {
-            d.balance = 0;
-            payoffOrder.push(d.name);
-            payoffMoments.push({ name: d.name, month: months });
+        for (const debt of debts) {
+          if (debt.balance <= 0.005 && !payoffMoments.some((p) => p.name === debt.name)) {
+            debt.balance = 0;
+            payoffMoments.push({ name: debt.name, month: months });
           }
         }
       }
 
       if (months >= 1200) {
-        return bot.sendMessage(chatId, "Simulation exceeded safe limit. Budget may be too low to pay off debts.");
+        return bot.sendMessage(
+          chatId,
+          "Simulation exceeded safe limit. Budget may be too low to pay off debts."
+        );
       }
 
-      let out = `💳 Debt Simulation (${mode})\n\n`;
-      out += "```\n";
-      out += `Starting Debt:      $${originalTotalDebt.toFixed(2)}\n`;
-      out += `Minimum Payments:   $${totalMinimums.toFixed(2)}\n`;
-      out += `Extra Payment:      $${extra.toFixed(2)}\n`;
-      out += `Monthly Budget:     $${monthlyBudget.toFixed(2)}\n`;
-      out += `Months to Payoff:   ${months}\n`;
-      out += `Interest Paid:      $${totalInterest.toFixed(2)}\n`;
-      out += "\n";
-      out += "Payoff Order\n";
-      out += "---------------------------------\n";
+      const payoffRows = payoffMoments.map((item, index) => [
+        String(index + 1),
+        item.name,
+        `month ${item.month}`
+      ]);
 
-      for (const p of payoffMoments) {
-        const name = String(p.name).padEnd(12);
-        const when = (`month ${p.month}`).padStart(10);
-        out += `${name}${when}\n`;
+      const lines = [
+        `💳 *Debt Simulation (${mode})*`,
+        "",
+        codeBlock([
+          `Starting Debt      ${formatMoney(originalTotalDebt)}`,
+          `Minimum Payments   ${formatMoney(totalMinimums)}`,
+          `Extra Payment      ${formatMoney(extra)}`,
+          `Monthly Budget     ${formatMoney(monthlyBudget)}`,
+          `Months to Payoff   ${months}`,
+          `Interest Paid      ${formatMoney(totalInterest)}`
+        ].join("\n"))
+      ];
+
+      if (payoffRows.length) {
+        lines.push(
+          renderTable(
+            ["#", "Debt", "Paid Off"],
+            payoffRows,
+            { aligns: ["right", "left", "right"] }
+          )
+        );
       }
-
-      out += "```";
 
       if (mode === "snowball") {
-        out += "\nSnowball favors momentum: smallest balance first.";
+        lines.push("Snowball favors momentum: smallest balance first.");
       } else {
-        out += "\nAvalanche favors math: highest APR first.";
+        lines.push("Avalanche favors math: highest APR first.");
       }
 
-      return bot.sendMessage(chatId, out, {
+      return bot.sendMessage(chatId, lines.join("\n"), {
         parse_mode: "Markdown"
       });
     } catch (err) {
@@ -157,4 +223,25 @@ module.exports = function registerDebtSimHandler(bot, deps) {
       return bot.sendMessage(chatId, "Error running debt simulation.");
     }
   });
+};
+
+module.exports.help = {
+  command: "debt_sim",
+  category: "Debt",
+  summary: "Simulate debt payoff over time using snowball or avalanche with an extra monthly payment.",
+  usage: [
+    "/debt_sim <snowball|avalanche> <extra>"
+  ],
+  args: [
+    { name: "<snowball|avalanche>", description: "Strategy to simulate." },
+    { name: "<extra>", description: "Extra monthly payment on top of minimums. Must be zero or greater." }
+  ],
+  examples: [
+    "/debt_sim snowball 200",
+    "/debt_sim avalanche 400"
+  ],
+  notes: [
+    "Interest accrues monthly using each debt APR.",
+    "Simulation stops after payoff or a 100-year safety cap."
+  ]
 };

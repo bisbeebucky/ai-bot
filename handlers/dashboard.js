@@ -1,16 +1,63 @@
 // handlers/dashboard.js
 module.exports = function registerDashboardHandler(bot, deps) {
-  const { db, simulateCashflow, ledgerService } = deps;
+  const { db, simulateCashflow, ledgerService, format } = deps;
+  const { formatMoney, codeBlock } = format;
 
-  function money(n) {
-    return `$${(Number(n) || 0).toFixed(2)}`;
+  function renderHelp() {
+    return [
+      "*\\/dashboard*",
+      "Show a high-level financial dashboard with bank balance, savings, net worth, next income, 30-day low point, danger date, end-of-period balance, and debt total.",
+      "",
+      "*Usage*",
+      "- `/dashboard`",
+      "",
+      "*Examples*",
+      "- `/dashboard`",
+      "",
+      "*Notes*",
+      "- Uses `simulateCashflow` for the 30-day projection.",
+      "- Next income is pulled from recurring items that increase `assets:bank`."
+    ].join("\n");
   }
 
-  bot.onText(/^\/dashboard(@\w+)?$/, (msg) => {
+  function sendHelp(chatId) {
+    return bot.sendMessage(chatId, renderHelp(), {
+      parse_mode: "Markdown"
+    });
+  }
+
+  function parseLocalDate(dateStr) {
+    const s = String(dateStr || "").trim();
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return null;
+
+    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    d.setHours(12, 0, 0, 0);
+    return d;
+  }
+
+  bot.onText(/^\/dashboard(?:@\w+)?(?:\s+(.*))?$/i, (msg, match) => {
     const chatId = msg.chat.id;
+    const raw = String(match?.[1] || "").trim();
+
+    if (raw) {
+      if (/^(help|--help|-h)$/i.test(raw)) {
+        return sendHelp(chatId);
+      }
+
+      return bot.sendMessage(
+        chatId,
+        [
+          "The `/dashboard` command does not take arguments.",
+          "",
+          "Usage:",
+          "`/dashboard`"
+        ].join("\n"),
+        { parse_mode: "Markdown" }
+      );
+    }
 
     try {
-
       const balances = ledgerService.getBalances();
 
       let bank = 0;
@@ -30,24 +77,28 @@ module.exports = function registerDashboardHandler(bot, deps) {
       const networth = bank + savings - debt;
 
       const checking = db.prepare(`
-        SELECT id FROM accounts
+        SELECT id
+        FROM accounts
         WHERE name='assets:bank'
       `).get();
 
-      const sim = simulateCashflow(db, bank, checking.id, 30);
+      if (!checking) {
+        return bot.sendMessage(chatId, "Checking account not found.");
+      }
 
-      const lowest = sim.lowestBalance;
+      const sim = simulateCashflow(db, bank, checking.id, 30);
+      const lowest = Number(sim?.lowestBalance) || 0;
 
       const endBalance =
-        sim.timeline.length
-          ? sim.timeline[sim.timeline.length - 1].balance
+        Array.isArray(sim?.timeline) && sim.timeline.length
+          ? Number(sim.timeline[sim.timeline.length - 1].balance) || bank
           : bank;
 
       let dangerDate = null;
 
-      for (const e of sim.timeline) {
-        if (Number(e.balance) === Number(lowest)) {
-          dangerDate = e.date;
+      for (const event of sim.timeline || []) {
+        if (Number(event.balance) === Number(lowest)) {
+          dangerDate = event.date;
           break;
         }
       }
@@ -59,53 +110,74 @@ module.exports = function registerDashboardHandler(bot, deps) {
 
       let nextIncome = null;
 
-      for (const r of income) {
+      for (const row of income) {
         try {
-          const postings = JSON.parse(r.postings_json);
-          const bankLine = postings.find(p => p.account === "assets:bank");
+          const postings = JSON.parse(row.postings_json);
+          const bankLine = Array.isArray(postings)
+            ? postings.find((p) => p.account === "assets:bank")
+            : null;
 
           if (bankLine && Number(bankLine.amount) > 0) {
-            const d = new Date(r.next_due_date);
+            const d = parseLocalDate(row.next_due_date);
+            if (!d) continue;
 
             if (!nextIncome || d < nextIncome.date) {
               nextIncome = {
                 date: d,
-                amount: Number(bankLine.amount)
+                dateText: String(row.next_due_date || ""),
+                amount: Number(bankLine.amount) || 0,
+                description: String(row.description || "")
               };
             }
           }
-        } catch { }
+        } catch (_) {
+          // ignore malformed recurring rows
+        }
       }
 
-      let out = "📊 Financial Dashboard\n\n";
-      out += "```\n";
+      const lines = [
+        "📊 *Financial Dashboard*",
+        "",
+        codeBlock([
+          `Balance        ${formatMoney(bank)}`,
+          `Savings        ${formatMoney(savings)}`,
+          `Net Worth      ${formatMoney(networth)}`,
+          nextIncome
+            ? `Next Income    ${formatMoney(nextIncome.amount)} (${nextIncome.dateText})`
+            : `Next Income    unavailable`,
+          `Lowest Balance ${formatMoney(lowest)}`,
+          `Danger Date    ${dangerDate || "none"}`,
+          `End 30 Days    ${formatMoney(endBalance)}`,
+          `Debt           ${formatMoney(debt)}`
+        ].join("\n"))
+      ];
 
-      out += `Balance:        ${money(bank)}\n`;
-      out += `Savings:        ${money(savings)}\n`;
-      out += `Net Worth:      ${money(networth)}\n\n`;
-
-      if (nextIncome) {
-        out += `Next Income:    ${money(nextIncome.amount)} (${nextIncome.date.toISOString().slice(0, 10)})\n\n`;
+      if (nextIncome?.description) {
+        lines.push(`Next income source: \`${nextIncome.description}\``);
       }
 
-      out += `Lowest Balance: ${money(lowest)}\n`;
-      if (dangerDate) {
-        out += `Danger Date:    ${dangerDate}\n`;
-      }
-
-      out += `End 30 Days:    ${money(endBalance)}\n\n`;
-
-      out += `Debt:           ${money(debt)}\n`;
-
-      out += "```";
-
-      return bot.sendMessage(chatId, out, {
+      return bot.sendMessage(chatId, lines.join("\n"), {
         parse_mode: "Markdown"
       });
-
     } catch (err) {
-      console.error(err);
-      bot.sendMessage(chatId, "Dashboard error.");
+      console.error("dashboard error:", err);
+      return bot.sendMessage(chatId, "Dashboard error.");
     }
   });
+};
+
+module.exports.help = {
+  command: "dashboard",
+  category: "Reporting",
+  summary: "Show a high-level financial dashboard with bank balance, savings, net worth, next income, 30-day low point, danger date, end-of-period balance, and debt total.",
+  usage: [
+    "/dashboard"
+  ],
+  examples: [
+    "/dashboard"
+  ],
+  notes: [
+    "Uses `simulateCashflow` for the 30-day projection.",
+    "Next income is pulled from recurring items that increase `assets:bank`."
+  ]
 };

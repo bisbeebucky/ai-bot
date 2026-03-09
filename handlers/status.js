@@ -1,10 +1,7 @@
 // handlers/status.js
 module.exports = function registerStatusHandler(bot, deps) {
-  const { db, ledgerService } = deps;
-
-  function money(n) {
-    return `$${(Number(n) || 0).toFixed(2)}`;
-  }
+  const { db, ledgerService, format } = deps;
+  const { formatMoney, codeBlock, renderTable } = format;
 
   function parseYMD(s) {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || "").trim());
@@ -17,6 +14,12 @@ module.exports = function registerStatusHandler(bot, deps) {
     const m = String(d.getMonth() + 1).padStart(2, "0");
     const day = String(d.getDate()).padStart(2, "0");
     return `${y}-${m}-${day}`;
+  }
+
+  function signedMoney(n, suffix = "") {
+    const value = Number(n) || 0;
+    const sign = value >= 0 ? "+" : "-";
+    return `${sign}${formatMoney(Math.abs(value))}${suffix}`;
   }
 
   function nextDueDate(dateObj, frequency) {
@@ -57,16 +60,56 @@ module.exports = function registerStatusHandler(bot, deps) {
     }
   }
 
-  bot.onText(/^\/status(@\w+)?$/, (msg) => {
+  function renderHelp() {
+    return [
+      "*\\/status*",
+      "Show a compact financial status snapshot including current balance, recent income and expenses, recurring 30-day net, projected 30-day balance, and debt metrics.",
+      "",
+      "*Usage*",
+      "- `/status`",
+      "",
+      "*Examples*",
+      "- `/status`",
+      "",
+      "*Notes*",
+      "- Uses `ledgerService.getBalances()` for current balances.",
+      "- Expands recurring items across the next 30 days.",
+      "- Shows up to 3 upcoming recurring events."
+    ].join("\n");
+  }
+
+  function sendHelp(chatId) {
+    return bot.sendMessage(chatId, renderHelp(), {
+      parse_mode: "Markdown"
+    });
+  }
+
+  bot.onText(/^\/status(?:@\w+)?(?:\s+(.*))?$/i, (msg, match) => {
     const chatId = msg.chat.id;
+    const raw = String(match?.[1] || "").trim();
+
+    if (raw) {
+      if (/^(help|--help|-h)$/i.test(raw)) {
+        return sendHelp(chatId);
+      }
+
+      return bot.sendMessage(
+        chatId,
+        [
+          "The `/status` command does not take arguments.",
+          "",
+          "Usage:",
+          "`/status`"
+        ].join("\n"),
+        { parse_mode: "Markdown" }
+      );
+    }
 
     try {
-      // current bank balance
       const balances = ledgerService.getBalances();
       const bank = balances.find((b) => b.account === "assets:bank");
       const bankBalance = Number(bank?.balance) || 0;
 
-      // last 30d posted income/expenses
       const rows = db.prepare(`
         SELECT
           a.type as type,
@@ -82,15 +125,14 @@ module.exports = function registerStatusHandler(bot, deps) {
       let income30 = 0;
       let expenses30 = 0;
 
-      for (const r of rows) {
-        const v = Math.abs(Number(r.total) || 0);
-        if (r.type === "INCOME") income30 = v;
-        if (r.type === "EXPENSES") expenses30 = v;
+      for (const row of rows) {
+        const value = Math.abs(Number(row.total) || 0);
+        if (row.type === "INCOME") income30 = value;
+        if (row.type === "EXPENSES") expenses30 = value;
       }
 
       const net30 = income30 - expenses30;
 
-      // recurring next 30d (expanded occurrences)
       const recurring = db.prepare(`
         SELECT id, description, postings_json, frequency, next_due_date
         FROM recurring_transactions
@@ -105,14 +147,14 @@ module.exports = function registerStatusHandler(bot, deps) {
       end.setHours(12, 0, 0, 0);
 
       let recurringNet30 = 0;
-      let nextItems = [];
+      const nextItems = [];
 
-      for (const r of recurring) {
-        let due = parseYMD(r.next_due_date);
+      for (const row of recurring) {
+        let due = parseYMD(row.next_due_date);
         if (!due) continue;
 
         let guard = 0;
-        const bankAmt = extractBankAmount(r.postings_json);
+        const bankAmt = extractBankAmount(row.postings_json);
 
         while (due <= end && guard < 500) {
           if (due >= today) {
@@ -121,13 +163,13 @@ module.exports = function registerStatusHandler(bot, deps) {
             if (nextItems.length < 3) {
               nextItems.push({
                 date: ymd(due),
-                description: r.description,
+                description: String(row.description || ""),
                 amount: bankAmt
               });
             }
           }
 
-          const next = nextDueDate(due, r.frequency);
+          const next = nextDueDate(due, row.frequency);
           if (!next) break;
           due = next;
           guard += 1;
@@ -136,7 +178,6 @@ module.exports = function registerStatusHandler(bot, deps) {
 
       const projectedNet30 = bankBalance + recurringNet30;
 
-      // debt snapshot
       const debtRow = db.prepare(`
         SELECT
           IFNULL(SUM(balance), 0) as totalDebt,
@@ -152,28 +193,39 @@ module.exports = function registerStatusHandler(bot, deps) {
           ? (Number(debtRow?.weightedNumerator) || 0) / totalDebt
           : 0;
 
-      let out = "📊 Status\n\n";
-      out += "```\n";
-      out += `Balance:        ${money(bankBalance)}\n`;
-      out += `30d Income:     ${money(income30)}\n`;
-      out += `30d Expenses:   ${money(expenses30)}\n`;
-      out += `30d Net:        ${net30 >= 0 ? "+" : "-"}${money(Math.abs(net30))}\n`;
-      out += `Recurring 30d:  ${recurringNet30 >= 0 ? "+" : "-"}${money(Math.abs(recurringNet30))}\n`;
-      out += `Projected 30d:  ${money(projectedNet30)}\n`;
-      out += `Debt Total:     ${money(totalDebt)}\n`;
-      out += `Debt Min/Mon:   ${money(totalMinimums)}\n`;
-      out += `Weighted APR:   ${weightedApr.toFixed(2)}%\n`;
-      out += "```";
+      const lines = [
+        "📊 *Status*",
+        "",
+        codeBlock([
+          `Balance        ${formatMoney(bankBalance)}`,
+          `30d Income     ${formatMoney(income30)}`,
+          `30d Expenses   ${formatMoney(expenses30)}`,
+          `30d Net        ${signedMoney(net30)}`,
+          `Recurring 30d  ${signedMoney(recurringNet30)}`,
+          `Projected 30d  ${formatMoney(projectedNet30)}`,
+          `Debt Total     ${formatMoney(totalDebt)}`,
+          `Debt Min/Mon   ${formatMoney(totalMinimums)}`,
+          `Weighted APR   ${weightedApr.toFixed(2)}%`
+        ].join("\n"))
+      ];
 
       if (nextItems.length) {
-        out += "\nNext events:\n";
-        for (const item of nextItems) {
-          const sign = item.amount >= 0 ? "+" : "-";
-          out += `• ${item.date}  ${item.description}  ${sign}${money(Math.abs(item.amount))}\n`;
-        }
+        const nextRows = nextItems.map((item) => [
+          item.date,
+          item.description,
+          signedMoney(item.amount)
+        ]);
+
+        lines.push(
+          renderTable(
+            ["Date", "Next Event", "Amount"],
+            nextRows,
+            { aligns: ["left", "left", "right"] }
+          )
+        );
       }
 
-      return bot.sendMessage(chatId, out, {
+      return bot.sendMessage(chatId, lines.join("\n"), {
         parse_mode: "Markdown"
       });
     } catch (err) {
@@ -181,4 +233,21 @@ module.exports = function registerStatusHandler(bot, deps) {
       return bot.sendMessage(chatId, "Error generating status.");
     }
   });
+};
+
+module.exports.help = {
+  command: "status",
+  category: "Reporting",
+  summary: "Show a compact financial status snapshot including current balance, recent income and expenses, recurring 30-day net, projected 30-day balance, and debt metrics.",
+  usage: [
+    "/status"
+  ],
+  examples: [
+    "/status"
+  ],
+  notes: [
+    "Uses `ledgerService.getBalances()` for current balances.",
+    "Expands recurring items across the next 30 days.",
+    "Shows up to 3 upcoming recurring events."
+  ]
 };
