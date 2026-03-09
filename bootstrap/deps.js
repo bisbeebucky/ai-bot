@@ -9,6 +9,7 @@ const recurringService = require("../services/recurringService");
 const simulateCashflow = require("../core/simulation");
 
 const format = require("../utils/format");
+const finance = require("../utils/finance");
 
 module.exports = function createDeps(db, openai) {
   const ledgerService = createLedgerService(db);
@@ -27,7 +28,8 @@ module.exports = function createDeps(db, openai) {
 
     simulateCashflow,
 
-    format
+    format,
+    finance
   };
 
   return Object.freeze(deps);

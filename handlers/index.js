@@ -114,18 +114,18 @@ function buildCommandRegistry(files) {
     }
 
     const lines = [
-      "*Available commands*",
-      "Use `/help <command>` or `/<command> help` for details."
+      "Help",
+      "Use /help <command> or /<command> help for details."
     ];
 
     for (const [category, items] of [...categories.entries()].sort(([a], [b]) =>
       a.localeCompare(b)
     )) {
       lines.push("");
-      lines.push(`*${category}*`);
+      lines.push(`${category}`);
 
       for (const item of items) {
-        lines.push(`- \`/${item.command}\` — ${item.summary}`);
+        lines.push(`  /${item.command} - ${item.summary}`);
       }
     }
 
