@@ -2,101 +2,16 @@
 const { ChartJSNodeCanvas } = require("chartjs-node-canvas");
 
 module.exports = function registerFutureHandler(bot, deps) {
-  const { db, ledgerService, format } = deps;
+  const { db, format, finance } = deps;
   const { formatMoney } = format;
-
-  function monthlyMultiplier(freq) {
-    switch ((freq || "").toLowerCase()) {
-      case "daily":
-        return 30;
-      case "weekly":
-        return 4.33;
-      case "monthly":
-        return 1;
-      case "yearly":
-        return 1 / 12;
-      default:
-        return 0;
-    }
-  }
-
-  function getStartingAssets() {
-    const balances = ledgerService.getBalances();
-
-    let bank = 0;
-    let savings = 0;
-
-    for (const b of balances) {
-      if (b.account === "assets:bank") bank = Number(b.balance) || 0;
-      if (b.account === "assets:savings") savings = Number(b.balance) || 0;
-    }
-
-    return {
-      bank,
-      savings,
-      total: bank + savings
-    };
-  }
-
-  function getRecurringMonthlyNet() {
-    const rows = db.prepare(`
-      SELECT postings_json, frequency
-      FROM recurring_transactions
-    `).all();
-
-    let income = 0;
-    let bills = 0;
-
-    for (const r of rows) {
-      try {
-        const postings = JSON.parse(r.postings_json);
-        const bankLine = Array.isArray(postings)
-          ? postings.find((p) => p.account === "assets:bank")
-          : null;
-
-        if (!bankLine) continue;
-
-        const amt = Number(bankLine.amount) || 0;
-        const monthly = Math.abs(amt) * monthlyMultiplier(r.frequency);
-
-        if (amt > 0) income += monthly;
-        if (amt < 0) bills += monthly;
-      } catch {
-        // ignore malformed recurring rows
-      }
-    }
-
-    return {
-      income,
-      bills,
-      net: income - bills
-    };
-  }
-
-  function getMonthlyExpenses() {
-    const row = db.prepare(`
-      SELECT IFNULL(SUM(p.amount), 0) as total
-      FROM transactions t
-      JOIN postings p ON p.transaction_id = t.id
-      JOIN accounts a ON a.id = p.account_id
-      WHERE strftime('%Y-%m', t.date) = strftime('%Y-%m', 'now')
-        AND a.type = 'EXPENSES'
-    `).get();
-
-    return Math.abs(Number(row?.total) || 0);
-  }
-
-  function getDebtRows() {
-    return db.prepare(`
-      SELECT name, balance, apr, minimum
-      FROM debts
-    `).all().map((r) => ({
-      name: String(r.name || ""),
-      balance: Number(r.balance) || 0,
-      apr: Number(r.apr) || 0,
-      minimum: Number(r.minimum) || 0
-    }));
-  }
+  const {
+    futureMonthLabel,
+    getStartingAssets,
+    getRecurringMonthlyNet,
+    getMonthlyExpenses,
+    getDebtRows,
+    simulateFIMonths
+  } = finance;
 
   function monthLabels(monthsToShow = 12) {
     const labels = [];
@@ -114,13 +29,6 @@ module.exports = function registerFutureHandler(bot, deps) {
     }
 
     return labels;
-  }
-
-  function futureMonthLabel(monthsAhead) {
-    const d = new Date();
-    d.setDate(1);
-    d.setMonth(d.getMonth() + monthsAhead);
-    return d.toLocaleString("en-US", { month: "long", year: "numeric" });
   }
 
   function simulateDebtSeries(rows, mode, extra, monthsToShow = 12) {
@@ -209,22 +117,6 @@ module.exports = function registerFutureHandler(bot, deps) {
     return { series, payoffMonths };
   }
 
-  function simulateFIMonths(startBalance, monthlySave, annualReturn, fiTarget) {
-    if (monthlySave <= 0 || fiTarget <= 0) return null;
-    if (startBalance >= fiTarget) return 0;
-
-    const monthlyRate = annualReturn / 100 / 12;
-    let balance = startBalance;
-    let months = 0;
-
-    while (balance < fiTarget && months < 1200) {
-      balance = balance * (1 + monthlyRate) + monthlySave;
-      months += 1;
-    }
-
-    return months >= 1200 ? null : months;
-  }
-
   function renderHelp() {
     return [
       "*\\/future*",
@@ -269,11 +161,11 @@ module.exports = function registerFutureHandler(bot, deps) {
         );
       }
 
-      const starting = getStartingAssets();
+      const starting = getStartingAssets(deps.ledgerService);
       const startingAssets = starting.total;
-      const recurring = getRecurringMonthlyNet();
-      const debtRows = getDebtRows();
-      const monthlyExpenses = getMonthlyExpenses();
+      const recurring = getRecurringMonthlyNet(db);
+      const debtRows = getDebtRows(db);
+      const monthlyExpenses = getMonthlyExpenses(db);
 
       const labels = monthLabels(horizon);
 

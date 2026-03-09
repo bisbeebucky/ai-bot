@@ -1,7 +1,12 @@
 // handlers/retirement.js
 module.exports = function registerRetirementHandler(bot, deps) {
-  const { db, ledgerService, format } = deps;
+  const { db, ledgerService, format, finance } = deps;
   const { formatMoney, codeBlock } = format;
+  const {
+    getStartingAssets,
+    getRecurringMonthlyNet,
+    simulateFIMonths
+  } = finance;
 
   function yearsMonths(months) {
     const y = Math.floor(months / 12);
@@ -9,72 +14,8 @@ module.exports = function registerRetirementHandler(bot, deps) {
     return { y, m };
   }
 
-  function monthlyMultiplier(freq) {
-    switch ((freq || "").toLowerCase()) {
-      case "daily":
-        return 30;
-      case "weekly":
-        return 4.33;
-      case "monthly":
-        return 1;
-      case "yearly":
-        return 1 / 12;
-      default:
-        return 0;
-    }
-  }
-
   function getStartingInvestableBalance() {
-    const balances = ledgerService.getBalances();
-
-    let bank = 0;
-    let savings = 0;
-
-    for (const balance of balances) {
-      if (balance.account === "assets:bank") {
-        bank = Number(balance.balance) || 0;
-      }
-      if (balance.account === "assets:savings") {
-        savings = Number(balance.balance) || 0;
-      }
-    }
-
-    return {
-      bank,
-      savings,
-      total: bank + savings
-    };
-  }
-
-  function getRecurringMonthlyNet() {
-    const rows = db.prepare(`
-      SELECT postings_json, frequency
-      FROM recurring_transactions
-    `).all();
-
-    let income = 0;
-    let bills = 0;
-
-    for (const row of rows) {
-      try {
-        const postings = JSON.parse(row.postings_json);
-        const bankLine = Array.isArray(postings)
-          ? postings.find((p) => p.account === "assets:bank")
-          : null;
-
-        if (!bankLine) continue;
-
-        const amount = Number(bankLine.amount) || 0;
-        const monthly = Math.abs(amount) * monthlyMultiplier(row.frequency);
-
-        if (amount > 0) income += monthly;
-        if (amount < 0) bills += monthly;
-      } catch {
-        // ignore malformed recurring rows
-      }
-    }
-
-    return income - bills;
+    return getStartingAssets(ledgerService);
   }
 
   function simulate(startBalance, monthlySave, annualReturn, target) {
@@ -154,7 +95,6 @@ module.exports = function registerRetirementHandler(bot, deps) {
     ].join("\n");
   }
 
-  // /retirement
   bot.onText(/^\/retirement(?:@\w+)?(?:\s+(.*))?$/i, (msg, match) => {
     const chatId = msg.chat.id;
     const raw = String(match?.[1] || "").trim();
@@ -271,7 +211,6 @@ module.exports = function registerRetirementHandler(bot, deps) {
     }
   });
 
-  // /retirement_auto
   bot.onText(/^\/retirement_auto(?:@\w+)?(?:\s+(.*))?$/i, (msg, match) => {
     const chatId = msg.chat.id;
     const raw = String(match?.[1] || "").trim();
@@ -327,7 +266,8 @@ module.exports = function registerRetirementHandler(bot, deps) {
 
       const starting = getStartingInvestableBalance();
       const startBalance = starting.total;
-      const monthlySave = getRecurringMonthlyNet();
+      const recurring = getRecurringMonthlyNet(db);
+      const monthlySave = recurring.net;
 
       if (monthlySave <= 0) {
         return sendMarkdown(

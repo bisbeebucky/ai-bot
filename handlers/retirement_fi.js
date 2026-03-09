@@ -1,22 +1,11 @@
 // handlers/retirement_fi.js
 module.exports = function registerRetirementFIHandler(bot, deps) {
-  const { db, ledgerService, format } = deps;
+  const { db, ledgerService, format, finance } = deps;
   const { formatMoney, codeBlock } = format;
-
-  function monthlyMultiplier(freq) {
-    switch ((freq || "").toLowerCase()) {
-      case "daily":
-        return 30;
-      case "weekly":
-        return 4.33;
-      case "monthly":
-        return 1;
-      case "yearly":
-        return 1 / 12;
-      default:
-        return 0;
-    }
-  }
+  const {
+    getStartingAssets,
+    getRecurringMonthlyNet
+  } = finance;
 
   function yearsMonths(totalMonths) {
     return {
@@ -31,55 +20,6 @@ module.exports = function registerRetirementFIHandler(bot, deps) {
     const month = d.toLocaleString("en-US", { month: "long" });
     const year = d.getFullYear();
     return `${month} ${year}`;
-  }
-
-  function getStartingAssets() {
-    const balances = ledgerService.getBalances();
-
-    let bank = 0;
-    let savings = 0;
-
-    for (const b of balances) {
-      if (b.account === "assets:bank") bank = Number(b.balance) || 0;
-      if (b.account === "assets:savings") savings = Number(b.balance) || 0;
-    }
-
-    return {
-      bank,
-      savings,
-      total: bank + savings
-    };
-  }
-
-  function getRecurringMonthlyNet() {
-    const rows = db.prepare(`
-      SELECT postings_json, frequency
-      FROM recurring_transactions
-    `).all();
-
-    let recurringIncome = 0;
-    let recurringBills = 0;
-
-    for (const r of rows) {
-      try {
-        const postings = JSON.parse(r.postings_json);
-        const bankLine = Array.isArray(postings)
-          ? postings.find((p) => p.account === "assets:bank")
-          : null;
-
-        if (!bankLine) continue;
-
-        const amt = Number(bankLine.amount) || 0;
-        const monthly = Math.abs(amt) * monthlyMultiplier(r.frequency);
-
-        if (amt > 0) recurringIncome += monthly;
-        if (amt < 0) recurringBills += monthly;
-      } catch {
-        // ignore malformed recurring rows
-      }
-    }
-
-    return recurringIncome - recurringBills;
   }
 
   function getActualMonthlyExpenses() {
@@ -150,9 +90,10 @@ module.exports = function registerRetirementFIHandler(bot, deps) {
         );
       }
 
-      const starting = getStartingAssets();
+      const starting = getStartingAssets(ledgerService);
       const startingBalance = starting.total;
-      const monthlySave = getRecurringMonthlyNet();
+      const recurring = getRecurringMonthlyNet(db);
+      const monthlySave = recurring.net;
       const monthlyExpenses = getActualMonthlyExpenses();
 
       if (monthlyExpenses <= 0) {
