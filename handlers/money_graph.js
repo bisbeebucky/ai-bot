@@ -2,13 +2,10 @@
 const { ChartJSNodeCanvas } = require("chartjs-node-canvas");
 
 module.exports = function registerMoneyGraphHandler(bot, deps) {
-  const { db, format, finance } = deps;
+  const { db, format, finance, debt, debtProjection } = deps;
   const { formatMoney } = format;
-  const {
-    getStartingAssets,
-    getRecurringMonthlyNet,
-    getDebtRows
-  } = finance;
+  const { getStartingAssets, getRecurringMonthlyNet, getDebtRows } = finance;
+  const { simulateDebtSeries } = debtProjection;
 
   function monthLabels(monthsToShow = 12) {
     const labels = [];
@@ -26,84 +23,6 @@ module.exports = function registerMoneyGraphHandler(bot, deps) {
     }
 
     return labels;
-  }
-
-  function simulateDebtSeries(rows, extra, monthsToShow = 12) {
-    const debts = rows.map((r) => ({ ...r }));
-
-    function sortDebts(arr) {
-      arr.sort((a, b) => {
-        const aprDiff = b.apr - a.apr;
-        if (aprDiff !== 0) return aprDiff;
-        return a.balance - b.balance;
-      });
-    }
-
-    function activeDebts() {
-      return debts.filter((d) => d.balance > 0.005);
-    }
-
-    const totalMinimums = debts.reduce((sum, d) => sum + d.minimum, 0);
-    const monthlyBudget = totalMinimums + extra;
-
-    const series = [debts.reduce((sum, d) => sum + d.balance, 0)];
-
-    if (debts.length === 0 || monthlyBudget <= 0) {
-      while (series.length < monthsToShow + 1) series.push(0);
-      return { series, payoffMonths: debts.length === 0 ? 0 : null };
-    }
-
-    let months = 0;
-    let payoffMonths = null;
-
-    while (months < monthsToShow) {
-      months += 1;
-
-      if (activeDebts().length > 0) {
-        for (const d of debts) {
-          if (d.balance <= 0.005) continue;
-          const monthlyRate = d.apr / 100 / 12;
-          d.balance += d.balance * monthlyRate;
-        }
-
-        const remaining = activeDebts();
-        sortDebts(remaining);
-
-        let paymentPool = monthlyBudget;
-
-        for (const d of remaining) {
-          if (paymentPool <= 0) break;
-          const minPay = Math.min(d.minimum, d.balance, paymentPool);
-          d.balance -= minPay;
-          paymentPool -= minPay;
-        }
-
-        let targets = activeDebts();
-        sortDebts(targets);
-
-        while (paymentPool > 0 && targets.length > 0) {
-          const target = targets[0];
-          const pay = Math.min(target.balance, paymentPool);
-          target.balance -= pay;
-          paymentPool -= pay;
-
-          targets = activeDebts();
-          sortDebts(targets);
-        }
-
-        for (const d of debts) {
-          if (d.balance < 0.005) d.balance = 0;
-        }
-
-        if (activeDebts().length === 0 && payoffMonths === null) {
-          payoffMonths = months;
-        }
-      }
-
-      series.push(debts.reduce((sum, d) => sum + d.balance, 0));
-    }
-
-    return { series, payoffMonths };
   }
 
   function renderHelp() {
@@ -155,18 +74,17 @@ module.exports = function registerMoneyGraphHandler(bot, deps) {
       const starting = getStartingAssets(deps.ledgerService);
       const assetsNow = starting.total;
       const recurring = getRecurringMonthlyNet(db);
-      const recurringNet = recurring.net;
       const debtRows = getDebtRows(db);
 
       const labels = monthLabels(horizon);
 
       const assetSeries = [assetsNow];
       for (let i = 1; i <= horizon; i++) {
-        assetSeries.push(assetsNow + recurringNet * i);
+        assetSeries.push(assetsNow + recurring.net * i);
       }
 
-      const debtExtra = Math.max(0, recurringNet);
-      const debtResult = simulateDebtSeries(debtRows, debtExtra, horizon);
+      const debtExtra = Math.max(0, recurring.net);
+      const debtResult = simulateDebtSeries(debtRows, "avalanche", debtExtra, horizon);
       const debtSeries = debtResult.series;
 
       const netWorthSeries = assetSeries.map(

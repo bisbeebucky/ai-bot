@@ -11,6 +11,9 @@ const simulateCashflow = require("../core/simulation");
 const format = require("../utils/format");
 const finance = require("../utils/finance");
 
+const debt = require("../services/debt_utils");
+const debtProjection = require("../services/debt_projection");
+
 module.exports = function createDeps(db, openai) {
   const ledgerService = createLedgerService(db);
   const financeEngine = createFinanceEngine(ledgerService);
@@ -29,7 +32,9 @@ module.exports = function createDeps(db, openai) {
     simulateCashflow,
 
     format,
-    finance
+    finance,
+    debt,
+    debtProjection
   };
 
   return Object.freeze(deps);
