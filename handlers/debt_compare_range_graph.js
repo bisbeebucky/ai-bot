@@ -2,11 +2,12 @@
 const { ChartJSNodeCanvas } = require("chartjs-node-canvas");
 
 module.exports = function registerDebtCompareRangeGraphHandler(bot, deps) {
-  const { db } = deps;
+  const { db, format } = deps;
+  const { formatMoney } = format;
 
   function cloneDebts(rows) {
     return rows.map((r) => ({
-      name: r.name,
+      name: String(r.name || ""),
       balance: Number(r.balance) || 0,
       apr: Number(r.apr) || 0,
       minimum: Number(r.minimum) || 0
@@ -35,7 +36,6 @@ module.exports = function registerDebtCompareRangeGraphHandler(bot, deps) {
 
   function runSimulation(rows, mode, extra) {
     const debts = cloneDebts(rows);
-
     const totalMinimums = debts.reduce((sum, d) => sum + d.minimum, 0);
     const monthlyBudget = totalMinimums + extra;
 
@@ -49,17 +49,14 @@ module.exports = function registerDebtCompareRangeGraphHandler(bot, deps) {
     while (activeDebts(debts).length > 0 && months < 1200) {
       months += 1;
 
-      // 1) interest accrual
       for (const d of debts) {
         if (d.balance <= 0.005) continue;
-
         const monthlyRate = d.apr / 100 / 12;
         const interest = d.balance * monthlyRate;
         d.balance += interest;
         totalInterest += interest;
       }
 
-      // 2) pay minimums
       const remaining = activeDebts(debts);
       sortDebts(remaining, mode);
 
@@ -67,13 +64,11 @@ module.exports = function registerDebtCompareRangeGraphHandler(bot, deps) {
 
       for (const d of remaining) {
         if (paymentPool <= 0) break;
-
         const minPay = Math.min(d.minimum, d.balance, paymentPool);
         d.balance -= minPay;
         paymentPool -= minPay;
       }
 
-      // 3) apply extra to target(s)
       let targets = activeDebts(debts);
       sortDebts(targets, mode);
 
@@ -87,7 +82,6 @@ module.exports = function registerDebtCompareRangeGraphHandler(bot, deps) {
         sortDebts(targets, mode);
       }
 
-      // 4) cleanup tiny negative leftovers
       for (const d of debts) {
         if (d.balance < 0.005) d.balance = 0;
       }
@@ -97,253 +91,193 @@ module.exports = function registerDebtCompareRangeGraphHandler(bot, deps) {
       return { months: null, interest: null };
     }
 
-    return {
-      months,
-      interest: totalInterest
-    };
+    return { months, interest: totalInterest };
   }
 
-  bot.onText(
-    /^\/debt_compare_range_graph\s+(\d+(\.\d+)?)\s+(\d+(\.\d+)?)\s+(\d+(\.\d+)?)$/i,
-    async (msg, match) => {
-      const chatId = msg.chat.id;
+  function renderHelp() {
+    return [
+      "*\\/debt_compare_range_graph*",
+      "Compare snowball vs avalanche across payment ranges.",
+      "",
+      "*Usage*",
+      "- `/debt_compare_range_graph <start> <end> <step>`",
+      "",
+      "*Examples*",
+      "- `/debt_compare_range_graph 100 500 100`"
+    ].join("\n");
+  }
 
-      try {
-        const start = Number(match[1]);
-        const end = Number(match[3]);
-        const step = Number(match[5]);
+  function sendHelp(chatId) {
+    return bot.sendMessage(chatId, renderHelp(), {
+      parse_mode: "Markdown"
+    });
+  }
 
-        if (
-          !Number.isFinite(start) ||
-          !Number.isFinite(end) ||
-          !Number.isFinite(step) ||
-          start < 0 ||
-          end < start ||
-          step <= 0
-        ) {
-          return bot.sendMessage(
-            chatId,
-            "Usage: /debt_compare_range_graph <start> <end> <step>\nExample: /debt_compare_range_graph 100 500 100"
-          );
-        }
+  bot.onText(/^\/debt_compare_range_graph(?:@\w+)?(?:\s+(.*))?$/i, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const raw = String(match?.[1] || "").trim();
 
-        const rows = db.prepare(`
-          SELECT name, balance, apr, minimum
-          FROM debts
-        `).all();
+    if (/^(help|--help|-h)$/i.test(raw)) {
+      return sendHelp(chatId);
+    }
 
-        if (!rows.length) {
-          return bot.sendMessage(chatId, "No debts recorded.");
-        }
+    try {
+      const parsed = raw.match(/^(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)$/);
 
-        const labels = [];
-        const snowballInterest = [];
-        const avalancheInterest = [];
-        const snowballMonths = [];
-        const avalancheMonths = [];
+      if (!parsed) {
+        return bot.sendMessage(
+          chatId,
+          [
+            "Usage: `/debt_compare_range_graph <start> <end> <step>`",
+            "Example: `/debt_compare_range_graph 100 500 100`"
+          ].join("\n"),
+          { parse_mode: "Markdown" }
+        );
+      }
 
-        for (let extra = start; extra <= end + 0.0001; extra += step) {
-          const snow = runSimulation(rows, "snowball", extra);
-          const ava = runSimulation(rows, "avalanche", extra);
+      const start = Number(parsed[1]);
+      const end = Number(parsed[2]);
+      const step = Number(parsed[3]);
 
-          labels.push(`$${extra.toFixed(0)}`);
-          snowballInterest.push(snow.interest == null ? null : Number(snow.interest.toFixed(2)));
-          avalancheInterest.push(ava.interest == null ? null : Number(ava.interest.toFixed(2)));
-          snowballMonths.push(snow.months);
-          avalancheMonths.push(ava.months);
-        }
+      if (!Number.isFinite(start) || !Number.isFinite(end) || !Number.isFinite(step) ||
+        start < 0 || end < start || step <= 0) {
+        return bot.sendMessage(
+          chatId,
+          [
+            "Usage: `/debt_compare_range_graph <start> <end> <step>`",
+            "Example: `/debt_compare_range_graph 100 500 100`"
+          ].join("\n"),
+          { parse_mode: "Markdown" }
+        );
+      }
 
-        const chartJSNodeCanvas = new ChartJSNodeCanvas({
-          width: 1100,
-          height: 700,
-          backgroundColour: "#0f172a"
-        });
+      const rows = db.prepare(`
+        SELECT name, balance, apr, minimum
+        FROM debts
+      `).all();
 
-        const configuration = {
-          type: "line",
-          data: {
-            labels,
-            datasets: [
-              {
-                label: "Snowball Interest",
-                data: snowballInterest,
-                yAxisID: "yInterest",
-                borderWidth: 4,
-                tension: 0.25,
-                pointRadius: 4,
-                fill: false,
-                borderDash: [8, 6]
-              },
-              {
-                label: "Avalanche Interest",
-                data: avalancheInterest,
-                yAxisID: "yInterest",
-                borderWidth: 4,
-                tension: 0.25,
-                pointRadius: 4,
-                fill: false
-              },
-              {
-                label: "Snowball Months",
-                data: snowballMonths,
-                yAxisID: "yMonths",
-                borderWidth: 3,
-                tension: 0.2,
-                pointRadius: 3,
-                fill: false,
-                borderDash: [2, 6]
-              },
-              {
-                label: "Avalanche Months",
-                data: avalancheMonths,
-                yAxisID: "yMonths",
-                borderWidth: 3,
-                tension: 0.2,
-                pointRadius: 3,
-                fill: false,
-                borderDash: [12, 4]
+      if (!rows.length) {
+        return bot.sendMessage(chatId, "No debts recorded.");
+      }
+
+      const labels = [];
+      const snowballInterest = [];
+      const avalancheInterest = [];
+
+      for (let extra = start; extra <= end + 0.0000001; extra += step) {
+        const normalizedExtra = Number(extra.toFixed(10));
+        const snow = runSimulation(rows, "snowball", normalizedExtra);
+        const ava = runSimulation(rows, "avalanche", normalizedExtra);
+
+        labels.push(`$${normalizedExtra.toFixed(0)}`);
+        snowballInterest.push(snow.interest == null ? null : snow.interest);
+        avalancheInterest.push(ava.interest == null ? null : ava.interest);
+      }
+
+      const chartJSNodeCanvas = new ChartJSNodeCanvas({
+        width: 1000,
+        height: 600,
+        backgroundColour: "#0f172a"
+      });
+
+      const configuration = {
+        type: "line",
+        data: {
+          labels,
+          datasets: [
+            {
+              label: "Snowball Interest",
+              data: snowballInterest,
+              borderWidth: 4,
+              tension: 0.25,
+              pointRadius: 3,
+              fill: false,
+              borderDash: [8, 6]
+            },
+            {
+              label: "Avalanche Interest",
+              data: avalancheInterest,
+              borderWidth: 4,
+              tension: 0.25,
+              pointRadius: 3,
+              fill: false
+            }
+          ]
+        },
+        options: {
+          responsive: false,
+          layout: { padding: 40 },
+          plugins: {
+            legend: {
+              labels: {
+                color: "#ffffff",
+                font: { size: 24 }
               }
-            ]
+            }
           },
-          options: {
-            responsive: false,
-            layout: { padding: 40 },
-            plugins: {
-              legend: {
-                labels: {
-                  color: "#ffffff",
-                  font: { size: 22 }
-                }
+          scales: {
+            x: {
+              ticks: {
+                color: "#ffffff",
+                font: { size: 18 },
+                maxTicksLimit: 10
               },
-              tooltip: {
-                callbacks: {
-                  label: (ctx) => {
-                    const axis = ctx.dataset.yAxisID;
-                    if (axis === "yInterest") {
-                      return `${ctx.dataset.label}: $${Number(ctx.raw).toLocaleString()}`;
-                    }
-                    return `${ctx.dataset.label}: ${ctx.raw} month(s)`;
-                  }
-                }
+              grid: {
+                color: "rgba(255,255,255,0.08)"
               }
             },
-            scales: {
-              x: {
-                ticks: {
-                  color: "#ffffff",
-                  font: { size: 18 }
-                },
-                title: {
-                  display: true,
-                  text: "Extra Monthly Payment",
-                  color: "#ffffff",
-                  font: { size: 18 }
-                },
-                grid: {
-                  color: "rgba(255,255,255,0.08)"
-                }
+            y: {
+              ticks: {
+                color: "#ffffff",
+                font: { size: 22 },
+                callback: (value) => "$" + Number(value).toLocaleString()
               },
-              yInterest: {
-                type: "linear",
-                position: "left",
-                ticks: {
-                  color: "#ffffff",
-                  font: { size: 18 },
-                  callback: (value) => "$" + Number(value).toLocaleString()
-                },
-                title: {
-                  display: true,
-                  text: "Total Interest Paid",
-                  color: "#ffffff",
-                  font: { size: 18 }
-                },
-                grid: {
-                  color: "rgba(255,255,255,0.08)"
-                }
-              },
-              yMonths: {
-                type: "linear",
-                position: "right",
-                ticks: {
-                  color: "#ffffff",
-                  font: { size: 18 }
-                },
-                title: {
-                  display: true,
-                  text: "Months to Payoff",
-                  color: "#ffffff",
-                  font: { size: 18 }
-                },
-                grid: {
-                  drawOnChartArea: false
-                }
+              grid: {
+                color: (ctx) =>
+                  ctx.tick.value === 0
+                    ? "rgba(255,255,255,0.35)"
+                    : "rgba(255,255,255,0.08)"
               }
             }
           }
-        };
-
-        const image = await chartJSNodeCanvas.renderToBuffer(configuration);
-
-        await bot.sendPhoto(chatId, image, {
-          filename: "debt_compare_range_graph.png",
-          contentType: "image/png"
-        });
-
-        // Find the biggest payoff-time improvement between adjacent extra amounts
-        let bestJump = null;
-        for (let i = 1; i < labels.length; i++) {
-          if (
-            snowballMonths[i - 1] != null &&
-            snowballMonths[i] != null &&
-            avalancheMonths[i - 1] != null &&
-            avalancheMonths[i] != null
-          ) {
-            const avgPrev = (snowballMonths[i - 1] + avalancheMonths[i - 1]) / 2;
-            const avgNow = (snowballMonths[i] + avalancheMonths[i]) / 2;
-            const monthsSaved = avgPrev - avgNow;
-
-            if (bestJump == null || monthsSaved > bestJump.monthsSaved) {
-              bestJump = {
-                from: labels[i - 1],
-                to: labels[i],
-                monthsSaved
-              };
-            }
-          }
         }
+      };
 
-        let summary = "💳 Debt Compare Range Graph\n\n";
+      const image = await chartJSNodeCanvas.renderToBuffer(configuration);
 
-        for (let i = 0; i < labels.length; i++) {
-          const sInt = snowballInterest[i];
-          const aInt = avalancheInterest[i];
-          const sMon = snowballMonths[i];
-          const aMon = avalancheMonths[i];
+      await bot.sendPhoto(chatId, image, {
+        filename: "debt_compare_range_graph.png",
+        contentType: "image/png"
+      });
 
-          if (sInt == null || aInt == null || sMon == null || aMon == null) {
-            summary += `• ${labels[i]}: unavailable\n`;
-            continue;
-          }
-
-          const better =
-            aInt + 0.005 < sInt
-              ? `avalanche saves $${(sInt - aInt).toFixed(2)}`
-              : sInt + 0.005 < aInt
-                ? `snowball saves $${(aInt - sInt).toFixed(2)}`
-                : "same interest";
-
-          summary += `• ${labels[i]}: snowball ${sMon}m/$${sInt.toFixed(0)}, avalanche ${aMon}m/$${aInt.toFixed(0)} → ${better}\n`;
-        }
-
-        if (bestJump && bestJump.monthsSaved > 0) {
-          summary += `\nBiggest payoff-time jump: ${bestJump.from} → ${bestJump.to} saves about ${bestJump.monthsSaved.toFixed(1)} month(s).`;
-        }
-
-        return bot.sendMessage(chatId, summary);
-      } catch (err) {
-        console.error("debt_compare_range_graph error:", err);
-        return bot.sendMessage(chatId, "Error generating debt compare range graph.");
-      }
+      return bot.sendMessage(
+        chatId,
+        [
+          "💳 Debt Compare Range Graph",
+          "",
+          `Range: ${formatMoney(start)} to ${formatMoney(end)} by ${formatMoney(step)}`
+        ].join("\n")
+      );
+    } catch (err) {
+      console.error("debt_compare_range_graph error:", err);
+      return bot.sendMessage(chatId, "Error generating debt compare range graph.");
     }
-  );
+  });
+};
+
+module.exports.help = {
+  command: "debt_compare_range_graph",
+  category: "Debt",
+  summary: "Compare snowball vs avalanche across payment ranges.",
+  usage: [
+    "/debt_compare_range_graph <start> <end> <step>"
+  ],
+  args: [
+    { name: "<start>", description: "Starting extra payment." },
+    { name: "<end>", description: "Ending extra payment." },
+    { name: "<step>", description: "Step size." }
+  ],
+  examples: [
+    "/debt_compare_range_graph 100 500 100"
+  ]
 };

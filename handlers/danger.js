@@ -1,10 +1,7 @@
 // handlers/danger.js
 module.exports = function registerDangerHandler(bot, deps) {
-  const { db, simulateCashflow } = deps;
-
-  function money(n) {
-    return `$${(Number(n) || 0).toFixed(2)}`;
-  }
+  const { db, simulateCashflow, format } = deps;
+  const { formatMoney, codeBlock } = format;
 
   function daysUntil(dateStr) {
     const today = new Date();
@@ -16,8 +13,45 @@ module.exports = function registerDangerHandler(bot, deps) {
     return Math.round((d - today) / (1000 * 60 * 60 * 24));
   }
 
-  bot.onText(/^\/danger(@\w+)?$/i, (msg) => {
+  function renderHelp() {
+    return [
+      "*\\/danger*",
+      "Shows the date and event where your balance is lowest.",
+      "",
+      "*Usage*",
+      "- `/danger`",
+      "",
+      "*Examples*",
+      "- `/danger`"
+    ].join("\n");
+  }
+
+  function sendHelp(chatId) {
+    return bot.sendMessage(chatId, renderHelp(), {
+      parse_mode: "Markdown"
+    });
+  }
+
+  bot.onText(/^\/danger(?:@\w+)?(?:\s+(.*))?$/i, (msg, match) => {
     const chatId = msg.chat.id;
+    const raw = String(match?.[1] || "").trim();
+
+    if (raw) {
+      if (/^(help|--help|-h)$/i.test(raw)) {
+        return sendHelp(chatId);
+      }
+
+      return bot.sendMessage(
+        chatId,
+        [
+          "The `/danger` command does not take arguments.",
+          "",
+          "Usage:",
+          "`/danger`"
+        ].join("\n"),
+        { parse_mode: "Markdown" }
+      );
+    }
 
     try {
       const checking = db.prepare(`
@@ -44,7 +78,13 @@ module.exports = function registerDangerHandler(bot, deps) {
       if (!timeline.length) {
         return bot.sendMessage(
           chatId,
-          `⚠️ Danger Window\n\nNo recurring events in the next 30 days.\nCurrent Balance: ${money(currentBalance)}`
+          [
+            "⚠️ *Danger Window*",
+            "",
+            `No recurring events in the next 30 days.`,
+            `Current Balance: ${formatMoney(currentBalance)}`
+          ].join("\n"),
+          { parse_mode: "Markdown" }
         );
       }
 
@@ -66,15 +106,18 @@ module.exports = function registerDangerHandler(bot, deps) {
           : lowBal < 100 ? "⚠️ Tight"
             : "✅ Safe";
 
-      let out = "⚠️ Danger Window\n\n";
-      out += "```\n";
-      out += `Current Balance: ${money(currentBalance)}\n`;
-      out += `Lowest Balance:  ${money(lowBal)}\n`;
-      out += `Date:            ${lowestEvent.date}\n`;
-      out += `Days Away:       ${daysUntil(lowestEvent.date)}\n`;
-      out += `Trigger:         ${lowestEvent.description}\n`;
-      out += `Status:          ${riskLevel}\n`;
-      out += "```";
+      const out = [
+        "⚠️ *Danger Window*",
+        "",
+        codeBlock([
+          `Current Balance  ${formatMoney(currentBalance)}`,
+          `Lowest Balance   ${formatMoney(lowBal)}`,
+          `Date             ${lowestEvent.date}`,
+          `Days Away        ${daysUntil(lowestEvent.date)}`,
+          `Trigger          ${lowestEvent.description}`,
+          `Status           ${riskLevel}`
+        ].join("\n"))
+      ].join("\n");
 
       return bot.sendMessage(chatId, out, {
         parse_mode: "Markdown"
@@ -84,4 +127,16 @@ module.exports = function registerDangerHandler(bot, deps) {
       return bot.sendMessage(chatId, "Error calculating danger window.");
     }
   });
+};
+
+module.exports.help = {
+  command: "danger",
+  category: "General",
+  summary: "Shows the date and event where your balance is lowest.",
+  usage: [
+    "/danger"
+  ],
+  examples: [
+    "/danger"
+  ]
 };

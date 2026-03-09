@@ -1,63 +1,92 @@
-// handlers/buckets.js
-module.exports = function registerBucketsHandler(bot, deps) {
-  const { ledgerService, db } = deps;
+// handlers/networth.js
+module.exports = function registerNetworthHandler(bot, deps) {
+  const { ledgerService, format } = deps;
+  const { formatMoney, codeBlock } = format;
 
-  function money(n) {
-    return `$${(Number(n) || 0).toFixed(2)}`;
+  function renderHelp() {
+    return [
+      "*\\/networth*",
+      "Show assets minus liabilities.",
+      "",
+      "*Usage*",
+      "- `/networth`",
+      "",
+      "*Examples*",
+      "- `/networth`"
+    ].join("\n");
   }
 
-  bot.onText(/^\/networth(@\w+)?$/i, (msg) => {
+  function sendHelp(chatId) {
+    return bot.sendMessage(chatId, renderHelp(), {
+      parse_mode: "Markdown"
+    });
+  }
+
+  bot.onText(/^\/networth(?:@\w+)?(?:\s+(.*))?$/i, (msg, match) => {
     const chatId = msg.chat.id;
+    const raw = String(match?.[1] || "").trim();
+
+    if (raw) {
+      if (/^(help|--help|-h)$/i.test(raw)) {
+        return sendHelp(chatId);
+      }
+
+      return bot.sendMessage(
+        chatId,
+        [
+          "The `/networth` command does not take arguments.",
+          "",
+          "Usage:",
+          "`/networth`"
+        ].join("\n"),
+        { parse_mode: "Markdown" }
+      );
+    }
 
     try {
       const balances = ledgerService.getBalances();
 
-      let cash = 0;
-      let savings = 0;
-      let otherAssets = 0;
-      let liabilitiesFromLedger = 0;
+      let assets = 0;
+      let liabilities = 0;
 
-      for (const a of balances) {
-        const acct = String(a.account || "");
-        const bal = Number(a.balance) || 0;
+      for (const b of balances) {
+        const account = String(b.account || "");
+        const amount = Number(b.balance) || 0;
 
-        if (acct === "assets:bank") {
-          cash += bal;
-        } else if (acct.startsWith("assets:")) {
-          savings += bal;
-          otherAssets += bal;
-        } else if (acct.startsWith("liabilities:")) {
-          liabilitiesFromLedger += Math.abs(bal);
-        }
+        if (account.startsWith("assets:")) assets += amount;
+        if (account.startsWith("liabilities:")) liabilities += Math.abs(amount);
       }
 
-      const debtRow = db.prepare(`
-        SELECT IFNULL(SUM(balance), 0) as totalDebt
-        FROM debts
-      `).get();
+      const networth = assets - liabilities;
 
-      const debtTableTotal = Number(debtRow?.totalDebt) || 0;
-
-      // Prefer explicit debts table if present, otherwise fallback to ledger liabilities
-      const debt = debtTableTotal > 0 ? debtTableTotal : liabilitiesFromLedger;
-
-      const totalAssets = cash + otherAssets;
-      const netWorth = totalAssets - debt;
-
-      let out = "🪣 Buckets\n\n";
-      out += "```\n";
-      out += `Cash:        ${money(cash)}\n`;
-      out += `Savings:     ${money(savings)}\n`;
-      out += `Debt:        ${money(debt)}\n`;
-      out += `Net Worth:   ${netWorth >= 0 ? "+" : "-"}${money(Math.abs(netWorth))}\n`;
-      out += "```";
+      const out = [
+        "📦 *Net Worth*",
+        "",
+        codeBlock([
+          `Assets       ${formatMoney(assets)}`,
+          `Liabilities  ${formatMoney(liabilities)}`,
+          `Net Worth    ${networth >= 0 ? "+" : "-"}${formatMoney(Math.abs(networth))}`
+        ].join("\n"))
+      ].join("\n");
 
       return bot.sendMessage(chatId, out, {
         parse_mode: "Markdown"
       });
     } catch (err) {
-      console.error("buckets error:", err);
-      return bot.sendMessage(chatId, "Error generating buckets summary.");
+      console.error("networth error:", err);
+      return bot.sendMessage(chatId, "Error calculating net worth.");
     }
   });
+};
+
+module.exports.help = {
+  command: "networth",
+  category: "Reporting",
+  summary: "Show assets minus liabilities.",
+  usage: [
+    "/networth"
+  ],
+  examples: [
+    "/networth"
+  ]
 };

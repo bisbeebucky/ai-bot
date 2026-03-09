@@ -52,24 +52,21 @@ DATE RULE:
   }
 
   function isProbablyJson(str) {
-    const s = (str || "").trim();
+    const s = String(str || "").trim();
     return s.startsWith("{") && s.endsWith("}");
   }
 
   function normalizeTransaction(raw, originalText) {
     const tx = raw && typeof raw === "object" ? raw : {};
 
-    // Force today's date no matter what the model says
     tx.date = todayYMD();
 
-    // Ensure description exists
     if (typeof tx.description !== "string" || !tx.description.trim()) {
       tx.description = originalText?.slice(0, 80) || "Transaction";
     } else {
       tx.description = tx.description.trim();
     }
 
-    // postings must be array
     if (!Array.isArray(tx.postings)) {
       throw new Error("Missing postings array.");
     }
@@ -77,7 +74,6 @@ DATE RULE:
       throw new Error("Transaction must contain at least two postings.");
     }
 
-    // Normalize postings
     tx.postings = tx.postings.map((p) => ({
       account: String(p.account || "").trim(),
       amount: Number(p.amount)
@@ -88,7 +84,6 @@ DATE RULE:
       if (!Number.isFinite(p.amount)) throw new Error("Posting has invalid amount.");
     }
 
-    // Balance check (ledgerService also checks, but this gives a nicer error)
     const total = tx.postings.reduce((sum, p) => sum + p.amount, 0);
     if (Math.abs(total) > 0.00001) {
       throw new Error(`Postings do not balance (sum = ${total}).`);
@@ -100,8 +95,6 @@ DATE RULE:
   bot.on("message", async (msg) => {
     try {
       if (!msg?.text) return;
-
-      // ignore commands + ignore bots
       if (msg.text.startsWith("/")) return;
       if (msg.from?.is_bot) return;
 
@@ -115,9 +108,10 @@ DATE RULE:
       });
 
       const reply = completion?.choices?.[0]?.message?.content?.trim() || "";
-      if (!reply) return bot.sendMessage(msg.chat.id, "No response from AI.");
+      if (!reply) {
+        return bot.sendMessage(msg.chat.id, "No response from AI.");
+      }
 
-      // If it looks like JSON, try to post it
       if (isProbablyJson(reply)) {
         try {
           const parsed = JSON.parse(reply);
@@ -138,11 +132,14 @@ DATE RULE:
         }
       }
 
-      // Otherwise, just chat
       return bot.sendMessage(msg.chat.id, reply);
     } catch (err) {
       console.error("Chat handler error:", err);
       return bot.sendMessage(msg.chat.id, "AI error.");
     }
   });
+};
+
+module.exports.help = {
+  hidden: true
 };

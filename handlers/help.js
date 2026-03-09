@@ -2,7 +2,7 @@
 module.exports = function registerHelpHandler(bot, deps) {
   const { commandRegistry } = deps;
 
-  const PAGE_SIZE = 24;
+  const PAGE_SIZE = 13;
 
   function normalizeLookup(value) {
     return String(value || "")
@@ -97,7 +97,7 @@ module.exports = function registerHelpHandler(bot, deps) {
 
     const page = pages[pageNumber - 1];
     const lines = [
-      `Help Page ${pageNumber}/${pages.length}`,
+      `Help (${pageNumber}/${pages.length})`,
       "",
       "Use /help <command> for details.",
       ""
@@ -110,6 +110,10 @@ module.exports = function registerHelpHandler(bot, deps) {
     if (pageNumber < pages.length) {
       lines.push("");
       lines.push(`Next: /help ${pageNumber + 1}`);
+    }
+
+    if (pageNumber > 1) {
+      lines.push(`Prev: /help ${pageNumber - 1}`);
     }
 
     return lines.join("\n");

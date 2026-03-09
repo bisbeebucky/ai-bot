@@ -1,61 +1,8 @@
 // handlers/autopilot.js
 module.exports = function registerAutopilotHandler(bot, deps) {
-  const { db, simulateCashflow, ledgerService } = deps;
-
-  function money(n) {
-    return `$${(Number(n) || 0).toFixed(2)}`;
-  }
-
-  function monthlyMultiplier(freq) {
-    switch ((freq || "").toLowerCase()) {
-      case "daily": return 30;
-      case "weekly": return 4.33;
-      case "monthly": return 1;
-      case "yearly": return 1 / 12;
-      default: return 0;
-    }
-  }
-
-  function getRecurringMonthlyNet() {
-    const rows = db.prepare(`
-      SELECT postings_json, frequency
-      FROM recurring_transactions
-    `).all();
-
-    let income = 0;
-    let bills = 0;
-
-    for (const r of rows) {
-      try {
-        const postings = JSON.parse(r.postings_json);
-        const bankLine = Array.isArray(postings)
-          ? postings.find((p) => p.account === "assets:bank")
-          : null;
-
-        if (!bankLine) continue;
-
-        const amt = Number(bankLine.amount) || 0;
-        const monthly = Math.abs(amt) * monthlyMultiplier(r.frequency);
-
-        if (amt > 0) income += monthly;
-        if (amt < 0) bills += monthly;
-      } catch { }
-    }
-
-    return income - bills;
-  }
-
-  function getDebtRows() {
-    return db.prepare(`
-      SELECT name, balance, apr, minimum
-      FROM debts
-    `).all().map((r) => ({
-      name: r.name,
-      balance: Number(r.balance) || 0,
-      apr: Number(r.apr) || 0,
-      minimum: Number(r.minimum) || 0
-    }));
-  }
+  const { db, simulateCashflow, ledgerService, format, finance } = deps;
+  const { formatMoney, codeBlock } = format;
+  const { getRecurringMonthlyNet, getDebtRows } = finance;
 
   function cloneDebts(rows) {
     return rows.map((r) => ({ ...r }));
@@ -217,8 +164,48 @@ module.exports = function registerAutopilotHandler(bot, deps) {
     return sorted[0];
   }
 
-  bot.onText(/^\/autopilot(@\w+)?$/i, (msg) => {
+  function renderHelp() {
+    return [
+      "*\\/autopilot*",
+      "AI financial recommendation engine.",
+      "",
+      "*Usage*",
+      "- `/autopilot`",
+      "",
+      "*Examples*",
+      "- `/autopilot`",
+      "",
+      "*Notes*",
+      "- Prioritizes cash defense first, then debt payoff, then emergency savings, then long-term growth."
+    ].join("\n");
+  }
+
+  function sendHelp(chatId) {
+    return bot.sendMessage(chatId, renderHelp(), {
+      parse_mode: "Markdown"
+    });
+  }
+
+  bot.onText(/^\/autopilot(?:@\w+)?(?:\s+(.*))?$/i, (msg, match) => {
     const chatId = msg.chat.id;
+    const raw = String(match?.[1] || "").trim();
+
+    if (raw) {
+      if (/^(help|--help|-h)$/i.test(raw)) {
+        return sendHelp(chatId);
+      }
+
+      return bot.sendMessage(
+        chatId,
+        [
+          "The `/autopilot` command does not take arguments.",
+          "",
+          "Usage:",
+          "`/autopilot`"
+        ].join("\n"),
+        { parse_mode: "Markdown" }
+      );
+    }
 
     try {
       const balances = ledgerService.getBalances();
@@ -244,10 +231,11 @@ module.exports = function registerAutopilotHandler(bot, deps) {
       const sim = simulateCashflow(db, bank, checking.id, 30);
       const lowest = Number(sim.lowestBalance) || 0;
 
-      const debtRows = getDebtRows();
+      const debtRows = getDebtRows(db);
       const targetDebt = findTargetDebt(debtRows);
       const debt = debtRows.reduce((sum, d) => sum + d.balance, 0);
-      const monthlyNet = getRecurringMonthlyNet();
+      const recurring = getRecurringMonthlyNet(db);
+      const monthlyNet = recurring.net;
 
       const recommendedExtra = chooseBestExtra(
         debtRows,
@@ -263,22 +251,22 @@ module.exports = function registerAutopilotHandler(bot, deps) {
 
       if (lowest < 0) {
         mode = "Emergency Cash Defense";
-        reason = `Projected lowest balance is ${money(lowest)}.`;
+        reason = `Projected lowest balance is ${formatMoney(lowest)}.`;
         action = "Pause extra debt payments and cut discretionary spending immediately.";
         nextStep = "Use /danger and /untilpayday to manage the risk window.";
       } else if (lowest < 100) {
         mode = "Preserve Cash";
-        reason = `Projected lowest balance is only ${money(lowest)} before next income.`;
+        reason = `Projected lowest balance is only ${formatMoney(lowest)} before next income.`;
         action = "Avoid extra spending until payday and keep cash in checking.";
         nextStep = "Recheck /untilpayday after the next income lands.";
       } else if (debt > 0 && monthlyNet > 0) {
         mode = "Attack Debt";
-        reason = `You have ${money(debt)} in debt and positive recurring cashflow.`;
+        reason = `You have ${formatMoney(debt)} in debt and positive recurring cashflow.`;
 
         if (targetDebt && recommendedExtra) {
           action =
             `Target: ${targetDebt.name} (${targetDebt.apr}% APR)\n` +
-            `Recommended extra payment: ${money(recommendedExtra)} per month.`;
+            `Recommended extra payment: ${formatMoney(recommendedExtra)} per month.`;
         } else if (targetDebt) {
           action =
             `Target: ${targetDebt.name} (${targetDebt.apr}% APR)\n` +
@@ -290,7 +278,7 @@ module.exports = function registerAutopilotHandler(bot, deps) {
         nextStep = "Use /best_extra and /debt_compare_range_graph for fine tuning.";
       } else if (savings < 1000) {
         mode = "Build Emergency Fund";
-        reason = `Savings are only ${money(savings)}.`;
+        reason = `Savings are only ${formatMoney(savings)}.`;
         action = "Build a starter emergency fund before making aggressive long-term moves.";
         nextStep = "Use /emergency_fund to track your target.";
       } else {
@@ -300,27 +288,27 @@ module.exports = function registerAutopilotHandler(bot, deps) {
         nextStep = "Use /rich and /future to monitor long-term trajectory.";
       }
 
-      let out = "🤖 Autopilot\n\n";
-      out += "```\n";
-      out += `Mode:           ${mode}\n`;
-      out += `Bank:           ${money(bank)}\n`;
-      out += `Savings:        ${money(savings)}\n`;
-      out += `Debt:           ${money(debt)}\n`;
-      out += `Monthly Net:    ${monthlyNet >= 0 ? "+" : "-"}${money(Math.abs(monthlyNet))}\n`;
-      out += `Lowest Ahead:   ${money(lowest)}\n`;
-      if (recommendedExtra) {
-        out += `Best Extra:     ${money(recommendedExtra)}\n`;
-      }
-      out += "---------------------------\n";
-      out += `Reason: ${reason}\n`;
-      out += `Action: ${action}\n`;
-      out += "```";
+      const lines = [
+        "🤖 *Autopilot*",
+        "",
+        codeBlock([
+          `Mode         ${mode}`,
+          `Bank         ${formatMoney(bank)}`,
+          `Savings      ${formatMoney(savings)}`,
+          `Debt         ${formatMoney(debt)}`,
+          `Monthly Net  ${monthlyNet >= 0 ? "+" : "-"}${formatMoney(Math.abs(monthlyNet))}`,
+          `Lowest Ahead ${formatMoney(lowest)}`,
+          ...(recommendedExtra ? [`Best Extra   ${formatMoney(recommendedExtra)}`] : [])
+        ].join("\n")),
+        `Reason: ${reason}`,
+        `Action: ${action}`
+      ];
 
       if (nextStep) {
-        out += `\n${nextStep}`;
+        lines.push(nextStep);
       }
 
-      return bot.sendMessage(chatId, out, {
+      return bot.sendMessage(chatId, lines.join("\n"), {
         parse_mode: "Markdown"
       });
     } catch (err) {
@@ -328,4 +316,19 @@ module.exports = function registerAutopilotHandler(bot, deps) {
       return bot.sendMessage(chatId, "Autopilot error.");
     }
   });
+};
+
+module.exports.help = {
+  command: "autopilot",
+  category: "General",
+  summary: "AI financial recommendation engine.",
+  usage: [
+    "/autopilot"
+  ],
+  examples: [
+    "/autopilot"
+  ],
+  notes: [
+    "Prioritizes cash defense first, then debt payoff, then emergency savings, then long-term growth."
+  ]
 };

@@ -1,6 +1,7 @@
 // handlers/best_extra.js
 module.exports = function registerBestExtraHandler(bot, deps) {
-  const { db } = deps;
+  const { db, format } = deps;
+  const { formatMoney, codeBlock } = format;
 
   function cloneDebts(rows) {
     return rows.map((r) => ({
@@ -97,15 +98,65 @@ module.exports = function registerBestExtraHandler(bot, deps) {
     };
   }
 
+  function renderHelp() {
+    return [
+      "*\\/best_extra*",
+      "Find the most effective extra payment.",
+      "",
+      "*Usage*",
+      "- `/best_extra`",
+      "- `/best_extra <start> <end> <step>`",
+      "",
+      "*Arguments*",
+      "- `<start>` — Starting extra payment. Defaults to `100`.",
+      "- `<end>` — Ending extra payment. Defaults to `500`.",
+      "- `<step>` — Step size. Defaults to `100`.",
+      "",
+      "*Examples*",
+      "- `/best_extra`",
+      "- `/best_extra 100 500 100`"
+    ].join("\n");
+  }
+
+  function sendHelp(chatId) {
+    return bot.sendMessage(chatId, renderHelp(), {
+      parse_mode: "Markdown"
+    });
+  }
+
   bot.onText(
-    /^\/best_extra(?:\s+(\d+(\.\d+)?)\s+(\d+(\.\d+)?)\s+(\d+(\.\d+)?))?$/i,
+    /^\/best_extra(?:@\w+)?(?:\s+(.*))?$/i,
     (msg, match) => {
       const chatId = msg.chat.id;
+      const raw = String(match?.[1] || "").trim();
+
+      if (/^(help|--help|-h)$/i.test(raw)) {
+        return sendHelp(chatId);
+      }
 
       try {
-        const start = match[1] ? Number(match[1]) : 100;
-        const end = match[3] ? Number(match[3]) : 500;
-        const step = match[5] ? Number(match[5]) : 100;
+        let start = 100;
+        let end = 500;
+        let step = 100;
+
+        if (raw) {
+          const parsed = raw.match(/^(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)$/);
+
+          if (!parsed) {
+            return bot.sendMessage(
+              chatId,
+              [
+                "Usage: `/best_extra [start end step]`",
+                "Example: `/best_extra 100 500 100`"
+              ].join("\n"),
+              { parse_mode: "Markdown" }
+            );
+          }
+
+          start = Number(parsed[1]);
+          end = Number(parsed[2]);
+          step = Number(parsed[3]);
+        }
 
         if (
           !Number.isFinite(start) ||
@@ -117,7 +168,11 @@ module.exports = function registerBestExtraHandler(bot, deps) {
         ) {
           return bot.sendMessage(
             chatId,
-            "Usage: /best_extra [start end step]\nExample: /best_extra 100 500 100"
+            [
+              "Usage: `/best_extra [start end step]`",
+              "Example: `/best_extra 100 500 100`"
+            ].join("\n"),
+            { parse_mode: "Markdown" }
           );
         }
 
@@ -168,7 +223,6 @@ module.exports = function registerBestExtraHandler(bot, deps) {
           const extraDelta = curr.extra - prev.extra;
           const monthsSaved = prev.avgMonths - curr.avgMonths;
           const interestSaved = prev.avgInterest - curr.avgInterest;
-
           const monthsPerDollar = extraDelta > 0 ? monthsSaved / extraDelta : 0;
           const interestPerDollar = extraDelta > 0 ? interestSaved / extraDelta : 0;
 
@@ -191,8 +245,6 @@ module.exports = function registerBestExtraHandler(bot, deps) {
           }
         }
 
-        // diminishing returns:
-        // first interval where months saved drops below half of the best interval
         let diminishingAt = null;
         if (bestTimeJump && bestTimeJump.monthsSaved > 0) {
           const threshold = bestTimeJump.monthsSaved * 0.5;
@@ -209,38 +261,37 @@ module.exports = function registerBestExtraHandler(bot, deps) {
           }
         }
 
-        let out = "🎯 Best Extra Payment\n\n";
-        out += "```\n";
-        out += `Range:                $${start.toFixed(0)} → $${end.toFixed(0)} step $${step.toFixed(0)}\n`;
-
-        if (bestTimeJump) {
-          out += `Best Time Jump:       $${bestTimeJump.from.toFixed(0)} → $${bestTimeJump.to.toFixed(0)}\n`;
-          out += `Months Saved:         ${bestTimeJump.monthsSaved.toFixed(1)}\n`;
-        }
-
-        if (bestInterestJump) {
-          out += `Best Interest Value:  $${bestInterestJump.from.toFixed(0)} → $${bestInterestJump.to.toFixed(0)}\n`;
-          out += `Interest Saved:       $${bestInterestJump.interestSaved.toFixed(2)}\n`;
-          out += `Interest/$100 Extra:  $${(bestInterestJump.interestPerDollar * 100).toFixed(2)}\n`;
-        }
-
-        if (diminishingAt != null) {
-          out += `Diminishing Returns:  around $${diminishingAt.toFixed(0)} extra\n`;
-        } else {
-          out += `Diminishing Returns:  not reached in tested range\n`;
-        }
-
-        out += "```";
+        const out = [
+          "🎯 *Best Extra Payment*",
+          "",
+          codeBlock([
+            `Range               ${formatMoney(start)} → ${formatMoney(end)} step ${formatMoney(step)}`,
+            ...(bestTimeJump ? [
+              `Best Time Jump      ${formatMoney(bestTimeJump.from)} → ${formatMoney(bestTimeJump.to)}`,
+              `Months Saved        ${bestTimeJump.monthsSaved.toFixed(1)}`
+            ] : []),
+            ...(bestInterestJump ? [
+              `Best Interest Value ${formatMoney(bestInterestJump.from)} → ${formatMoney(bestInterestJump.to)}`,
+              `Interest Saved      ${formatMoney(bestInterestJump.interestSaved)}`,
+              `Interest/$100 Extra ${formatMoney(bestInterestJump.interestPerDollar * 100)}`
+            ] : []),
+            `Diminishing Returns ${diminishingAt != null ? `around ${formatMoney(diminishingAt)} extra` : "not reached in tested range"}`
+          ].join("\n"))
+        ];
 
         let summary = "";
         if (bestTimeJump) {
-          summary += `Biggest payoff-time improvement is from $${bestTimeJump.from.toFixed(0)} to $${bestTimeJump.to.toFixed(0)}. `;
+          summary += `Biggest payoff-time improvement is from ${formatMoney(bestTimeJump.from)} to ${formatMoney(bestTimeJump.to)}. `;
         }
         if (diminishingAt != null) {
-          summary += `Returns start flattening around $${diminishingAt.toFixed(0)} extra.`;
+          summary += `Returns start flattening around ${formatMoney(diminishingAt)} extra.`;
         }
 
-        return bot.sendMessage(chatId, out + "\n" + summary, {
+        if (summary) {
+          out.push(summary.trim());
+        }
+
+        return bot.sendMessage(chatId, out.join("\n"), {
           parse_mode: "Markdown"
         });
       } catch (err) {
@@ -249,4 +300,23 @@ module.exports = function registerBestExtraHandler(bot, deps) {
       }
     }
   );
+};
+
+module.exports.help = {
+  command: "best_extra",
+  category: "Debt",
+  summary: "Find the most effective extra payment.",
+  usage: [
+    "/best_extra",
+    "/best_extra <start> <end> <step>"
+  ],
+  args: [
+    { name: "<start>", description: "Starting extra payment. Defaults to 100." },
+    { name: "<end>", description: "Ending extra payment. Defaults to 500." },
+    { name: "<step>", description: "Step size. Defaults to 100." }
+  ],
+  examples: [
+    "/best_extra",
+    "/best_extra 100 500 100"
+  ]
 };

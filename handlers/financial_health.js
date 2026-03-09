@@ -1,4 +1,4 @@
-i// handlers/financial_health.js
+// handlers/financial_health.js
 module.exports = function registerFinancialHealthHandler(bot, deps) {
   const { db, ledgerService, format, finance } = deps;
   const { formatMoney, codeBlock } = format;
