@@ -1,100 +1,8 @@
 // handlers/debt_compare_range.js
 module.exports = function registerDebtCompareRangeHandler(bot, deps) {
-  const { db, format } = deps;
+  const { db, format, debt } = deps;
   const { renderTable } = format;
-
-  function cloneDebts(rows) {
-    return rows.map((r) => ({
-      name: String(r.name || ""),
-      balance: Number(r.balance) || 0,
-      apr: Number(r.apr) || 0,
-      minimum: Number(r.minimum) || 0
-    }));
-  }
-
-  function sortDebts(debts, mode) {
-    if (mode === "snowball") {
-      debts.sort((a, b) => {
-        const balDiff = a.balance - b.balance;
-        if (balDiff !== 0) return balDiff;
-        return b.apr - a.apr;
-      });
-    } else {
-      debts.sort((a, b) => {
-        const aprDiff = b.apr - a.apr;
-        if (aprDiff !== 0) return aprDiff;
-        return a.balance - b.balance;
-      });
-    }
-  }
-
-  function activeDebts(debts) {
-    return debts.filter((d) => d.balance > 0.005);
-  }
-
-  function runSimulation(rows, mode, extra) {
-    const debts = cloneDebts(rows);
-
-    const totalMinimums = debts.reduce((sum, d) => sum + d.minimum, 0);
-    const monthlyBudget = totalMinimums + extra;
-
-    if (monthlyBudget <= 0) {
-      throw new Error("Monthly budget must be greater than 0.");
-    }
-
-    let months = 0;
-    let totalInterest = 0;
-
-    while (activeDebts(debts).length > 0 && months < 1200) {
-      months += 1;
-
-      for (const d of debts) {
-        if (d.balance <= 0.005) continue;
-        const monthlyRate = d.apr / 100 / 12;
-        const interest = d.balance * monthlyRate;
-        d.balance += interest;
-        totalInterest += interest;
-      }
-
-      const remaining = activeDebts(debts);
-      sortDebts(remaining, mode);
-
-      let paymentPool = monthlyBudget;
-
-      for (const d of remaining) {
-        if (paymentPool <= 0) break;
-        const minPay = Math.min(d.minimum, d.balance, paymentPool);
-        d.balance -= minPay;
-        paymentPool -= minPay;
-      }
-
-      let targets = activeDebts(debts);
-      sortDebts(targets, mode);
-
-      while (paymentPool > 0 && targets.length > 0) {
-        const target = targets[0];
-        const pay = Math.min(target.balance, paymentPool);
-        target.balance -= pay;
-        paymentPool -= pay;
-
-        targets = activeDebts(debts);
-        sortDebts(targets, mode);
-      }
-
-      for (const d of debts) {
-        if (d.balance < 0.005) d.balance = 0;
-      }
-    }
-
-    if (months >= 1200) {
-      return { months: null, interest: null };
-    }
-
-    return {
-      months,
-      interest: totalInterest
-    };
-  }
+  const { getDebtRows, runDebtSimulation } = debt;
 
   function renderHelp() {
     return [
@@ -134,7 +42,9 @@ module.exports = function registerDebtCompareRangeHandler(bot, deps) {
     }
 
     try {
-      const parsed = raw.match(/^(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)$/);
+      const parsed = raw.match(
+        /^(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)$/
+      );
 
       if (!parsed) {
         return bot.sendMessage(
@@ -179,10 +89,7 @@ module.exports = function registerDebtCompareRangeHandler(bot, deps) {
         );
       }
 
-      const rows = db.prepare(`
-        SELECT name, balance, apr, minimum
-        FROM debts
-      `).all();
+      const rows = getDebtRows(db);
 
       if (!rows.length) {
         return bot.sendMessage(chatId, "No debts recorded.");
@@ -192,19 +99,23 @@ module.exports = function registerDebtCompareRangeHandler(bot, deps) {
 
       for (let extra = start; extra <= end + 0.0000001; extra += step) {
         const normalizedExtra = Number(extra.toFixed(10));
-        const snow = runSimulation(rows, "snowball", normalizedExtra);
-        const ava = runSimulation(rows, "avalanche", normalizedExtra);
 
-        const snowText = snow.months == null
+        const snow = runDebtSimulation(rows, "snowball", normalizedExtra);
+        const ava = runDebtSimulation(rows, "avalanche", normalizedExtra);
+
+        const snowText = snow.months == null || snow.interest == null
           ? ">100y"
           : `${snow.months}m / $${snow.interest.toFixed(0)}`;
 
-        const avaText = ava.months == null
+        const avaText = ava.months == null || ava.interest == null
           ? ">100y"
           : `${ava.months}m / $${ava.interest.toFixed(0)}`;
 
         let better = "same";
-        if (snow.months != null && ava.months != null) {
+        if (
+          snow.months != null && snow.interest != null &&
+          ava.months != null && ava.interest != null
+        ) {
           if (ava.interest + 0.005 < snow.interest) better = "avalanche";
           else if (snow.interest + 0.005 < ava.interest) better = "snowball";
         }

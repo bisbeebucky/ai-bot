@@ -1,97 +1,13 @@
 // handlers/autopilot.js
 module.exports = function registerAutopilotHandler(bot, deps) {
-  const { db, simulateCashflow, ledgerService, format, finance } = deps;
+  const { db, simulateCashflow, format, finance, debt } = deps;
   const { formatMoney, codeBlock } = format;
   const {
     getStartingAssets,
     getRecurringMonthlyNet,
     getDebtRows
   } = finance;
-
-  function cloneDebts(rows) {
-    return rows.map((r) => ({ ...r }));
-  }
-
-  function sortDebts(debts, mode) {
-    if (mode === "snowball") {
-      debts.sort((a, b) => {
-        const balDiff = a.balance - b.balance;
-        if (balDiff !== 0) return balDiff;
-        return b.apr - a.apr;
-      });
-    } else {
-      debts.sort((a, b) => {
-        const aprDiff = b.apr - a.apr;
-        if (aprDiff !== 0) return aprDiff;
-        return a.balance - b.balance;
-      });
-    }
-  }
-
-  function activeDebts(debts) {
-    return debts.filter((d) => d.balance > 0.005);
-  }
-
-  function runDebtSimulation(rows, mode, extra) {
-    const debts = cloneDebts(rows);
-
-    const totalMinimums = debts.reduce((sum, d) => sum + d.minimum, 0);
-    const monthlyBudget = totalMinimums + extra;
-
-    if (monthlyBudget <= 0) {
-      return { months: null, interest: null };
-    }
-
-    let months = 0;
-    let totalInterest = 0;
-
-    while (activeDebts(debts).length > 0 && months < 1200) {
-      months += 1;
-
-      for (const d of debts) {
-        if (d.balance <= 0.005) continue;
-        const monthlyRate = d.apr / 100 / 12;
-        const interest = d.balance * monthlyRate;
-        d.balance += interest;
-        totalInterest += interest;
-      }
-
-      const remaining = activeDebts(debts);
-      sortDebts(remaining, mode);
-
-      let paymentPool = monthlyBudget;
-
-      for (const d of remaining) {
-        if (paymentPool <= 0) break;
-        const minPay = Math.min(d.minimum, d.balance, paymentPool);
-        d.balance -= minPay;
-        paymentPool -= minPay;
-      }
-
-      let targets = activeDebts(debts);
-      sortDebts(targets, mode);
-
-      while (paymentPool > 0 && targets.length > 0) {
-        const target = targets[0];
-        const pay = Math.min(target.balance, paymentPool);
-        target.balance -= pay;
-        paymentPool -= pay;
-
-        targets = activeDebts(debts);
-        sortDebts(targets, mode);
-      }
-
-      for (const d of debts) {
-        if (d.balance < 0.005) d.balance = 0;
-      }
-    }
-
-    if (months >= 1200) {
-      return { months: null, interest: null };
-    }
-
-    return { months, interest: totalInterest };
-  }
+  const { runDebtSimulation } = debt;
 
   function chooseBestExtra(debtRows, monthlyNet, lowestAhead, savings) {
     if (!debtRows.length || monthlyNet <= 0) return null;
@@ -120,6 +36,7 @@ module.exports = function registerAutopilotHandler(bot, deps) {
     for (let extra = start; extra <= end; extra += step) {
       const ava = runDebtSimulation(debtRows, "avalanche", extra);
       if (ava.months == null || ava.interest == null) continue;
+
       points.push({
         extra,
         months: ava.months,
@@ -212,7 +129,7 @@ module.exports = function registerAutopilotHandler(bot, deps) {
     }
 
     try {
-      const starting = getStartingAssets(ledgerService);
+      const starting = getStartingAssets(deps.ledgerService);
       const bank = starting.bank;
       const savings = starting.savings;
 
@@ -231,7 +148,8 @@ module.exports = function registerAutopilotHandler(bot, deps) {
 
       const debtRows = getDebtRows(db);
       const targetDebt = findTargetDebt(debtRows);
-      const debt = debtRows.reduce((sum, d) => sum + d.balance, 0);
+      const debtTotal = debtRows.reduce((sum, d) => sum + d.balance, 0);
+
       const recurring = getRecurringMonthlyNet(db);
       const monthlyNet = recurring.net;
 
@@ -257,9 +175,9 @@ module.exports = function registerAutopilotHandler(bot, deps) {
         reason = `Projected lowest balance is only ${formatMoney(lowest)} before next income.`;
         action = "Avoid extra spending until payday and keep cash in checking.";
         nextStep = "Recheck /untilpayday after the next income lands.";
-      } else if (debt > 0 && monthlyNet > 0) {
+      } else if (debtTotal > 0 && monthlyNet > 0) {
         mode = "Attack Debt";
-        reason = `You have ${formatMoney(debt)} in debt and positive recurring cashflow.`;
+        reason = `You have ${formatMoney(debtTotal)} in debt and positive recurring cashflow.`;
 
         if (targetDebt && recommendedExtra) {
           action =
@@ -293,7 +211,7 @@ module.exports = function registerAutopilotHandler(bot, deps) {
           `Mode         ${mode}`,
           `Bank         ${formatMoney(bank)}`,
           `Savings      ${formatMoney(savings)}`,
-          `Debt         ${formatMoney(debt)}`,
+          `Debt         ${formatMoney(debtTotal)}`,
           `Monthly Net  ${monthlyNet >= 0 ? "+" : "-"}${formatMoney(Math.abs(monthlyNet))}`,
           `Lowest Ahead ${formatMoney(lowest)}`,
           ...(recommendedExtra ? [`Best Extra   ${formatMoney(recommendedExtra)}`] : [])

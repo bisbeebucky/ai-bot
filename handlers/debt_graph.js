@@ -2,114 +2,9 @@
 const { ChartJSNodeCanvas } = require("chartjs-node-canvas");
 
 module.exports = function registerDebtGraphHandler(bot, deps) {
-  const { db, format } = deps;
+  const { db, format, debt } = deps;
   const { formatMoney } = format;
-
-  function cloneDebts(rows) {
-    return rows.map((r) => ({
-      name: String(r.name || ""),
-      balance: Number(r.balance) || 0,
-      apr: Number(r.apr) || 0,
-      minimum: Number(r.minimum) || 0
-    }));
-  }
-
-  function sortDebts(debts, mode) {
-    if (mode === "snowball") {
-      debts.sort((a, b) => {
-        const balDiff = a.balance - b.balance;
-        if (balDiff !== 0) return balDiff;
-        return b.apr - a.apr;
-      });
-    } else {
-      debts.sort((a, b) => {
-        const aprDiff = b.apr - a.apr;
-        if (aprDiff !== 0) return aprDiff;
-        return a.balance - b.balance;
-      });
-    }
-  }
-
-  function activeDebts(debts) {
-    return debts.filter((d) => d.balance > 0.005);
-  }
-
-  function simulateSeries(rows, mode, extra) {
-    const debts = cloneDebts(rows);
-
-    const totalMinimums = debts.reduce((sum, d) => sum + d.minimum, 0);
-    const monthlyBudget = totalMinimums + extra;
-
-    if (monthlyBudget <= 0) {
-      throw new Error("Monthly debt budget must be greater than 0.");
-    }
-
-    const labels = ["Start"];
-    const totals = [debts.reduce((sum, d) => sum + d.balance, 0)];
-
-    let months = 0;
-    let totalInterest = 0;
-
-    while (activeDebts(debts).length > 0 && months < 1200) {
-      months += 1;
-
-      for (const d of debts) {
-        if (d.balance <= 0.005) continue;
-
-        const monthlyRate = d.apr / 100 / 12;
-        const interest = d.balance * monthlyRate;
-        d.balance += interest;
-        totalInterest += interest;
-      }
-
-      const remaining = activeDebts(debts);
-      sortDebts(remaining, mode);
-
-      let paymentPool = monthlyBudget;
-
-      for (const d of remaining) {
-        if (paymentPool <= 0) break;
-
-        const minPay = Math.min(d.minimum, d.balance, paymentPool);
-        d.balance -= minPay;
-        paymentPool -= minPay;
-      }
-
-      let targets = activeDebts(debts);
-      sortDebts(targets, mode);
-
-      while (paymentPool > 0 && targets.length > 0) {
-        const target = targets[0];
-        const pay = Math.min(target.balance, paymentPool);
-        target.balance -= pay;
-        paymentPool -= pay;
-
-        targets = activeDebts(debts);
-        sortDebts(targets, mode);
-      }
-
-      for (const d of debts) {
-        if (d.balance < 0.005) d.balance = 0;
-      }
-
-      const total = debts.reduce((sum, d) => sum + d.balance, 0);
-      labels.push(`M${months}`);
-      totals.push(total);
-    }
-
-    if (months >= 1200) {
-      throw new Error("Simulation exceeded safe limit.");
-    }
-
-    return {
-      labels,
-      totals,
-      months,
-      totalInterest,
-      startingDebt: totals[0],
-      endingDebt: totals[totals.length - 1]
-    };
-  }
+  const { getDebtRows, runDebtSimulation } = debt;
 
   function renderHelp() {
     return [
@@ -120,16 +15,16 @@ module.exports = function registerDebtGraphHandler(bot, deps) {
       "- `/debt_graph <snowball|avalanche> <extra>`",
       "",
       "*Arguments*",
-      "- `<snowball|avalanche>` — Strategy to use.",
+      "- `<snowball|avalanche>` — Debt payoff strategy to graph.",
       "- `<extra>` — Extra monthly payment on top of minimums. Must be zero or greater.",
       "",
       "*Examples*",
       "- `/debt_graph snowball 100`",
-      "- `/debt_graph avalanche 250.50`",
+      "- `/debt_graph avalanche 250`",
       "",
       "*Notes*",
       "- Uses your current debts table.",
-      "- Graph shows remaining debt balance over time."
+      "- Graph runs until payoff or the simulation safety limit."
     ].join("\n");
   }
 
@@ -161,7 +56,7 @@ module.exports = function registerDebtGraphHandler(bot, deps) {
             "",
             "Examples:",
             "`/debt_graph snowball 100`",
-            "`/debt_graph avalanche 250.50`"
+            "`/debt_graph avalanche 250`"
           ].join("\n"),
           { parse_mode: "Markdown" }
         );
@@ -183,16 +78,26 @@ module.exports = function registerDebtGraphHandler(bot, deps) {
         );
       }
 
-      const rows = db.prepare(`
-        SELECT name, balance, apr, minimum
-        FROM debts
-      `).all();
+      const rows = getDebtRows(db);
 
       if (!rows.length) {
         return bot.sendMessage(chatId, "No debts recorded.");
       }
 
-      const result = simulateSeries(rows, mode, extra);
+      const result = runDebtSimulation(rows, mode, extra);
+
+      if (
+        result.months == null ||
+        result.interest == null ||
+        !Array.isArray(result.totals) ||
+        !result.totals.length
+      ) {
+        return bot.sendMessage(chatId, "Simulation exceeded safe limit.");
+      }
+
+      const labels = Array.from({ length: result.totals.length }, (_, i) =>
+        i === 0 ? "Start" : `M${i}`
+      );
 
       const width = 1000;
       const height = 600;
@@ -206,7 +111,7 @@ module.exports = function registerDebtGraphHandler(bot, deps) {
       const configuration = {
         type: "line",
         data: {
-          labels: result.labels,
+          labels,
           datasets: [
             {
               label: `Debt Payoff (${mode})`,
@@ -266,14 +171,11 @@ module.exports = function registerDebtGraphHandler(bot, deps) {
         contentType: "image/png"
       });
 
-      const summary = [
-        `💳 Debt Graph (${mode})`,
-        "",
-        `Starting Debt: ${formatMoney(result.startingDebt)}`,
-        `Extra Payment: ${formatMoney(extra)} / month`,
-        `Months to Payoff: ${result.months}`,
-        `Interest Paid: ${formatMoney(result.totalInterest)}`
-      ].join("\n");
+      let summary = `💳 Debt Graph (${mode})\n\n`;
+      summary += `Starting Debt: ${formatMoney(result.startingDebt)}\n`;
+      summary += `Extra Payment: ${formatMoney(extra)} / month\n`;
+      summary += `Months to Payoff: ${result.months}\n`;
+      summary += `Interest Paid: ${formatMoney(result.interest)}`;
 
       return bot.sendMessage(chatId, summary);
     } catch (err) {
@@ -291,15 +193,15 @@ module.exports.help = {
     "/debt_graph <snowball|avalanche> <extra>"
   ],
   args: [
-    { name: "<snowball|avalanche>", description: "Strategy to use." },
+    { name: "<snowball|avalanche>", description: "Debt payoff strategy to graph." },
     { name: "<extra>", description: "Extra monthly payment on top of minimums. Must be zero or greater." }
   ],
   examples: [
     "/debt_graph snowball 100",
-    "/debt_graph avalanche 250.50"
+    "/debt_graph avalanche 250"
   ],
   notes: [
     "Uses your current debts table.",
-    "Graph shows remaining debt balance over time."
+    "Graph runs until payoff or the simulation safety limit."
   ]
 };

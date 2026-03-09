@@ -2,109 +2,9 @@
 const { ChartJSNodeCanvas } = require("chartjs-node-canvas");
 
 module.exports = function registerDebtCompareGraphHandler(bot, deps) {
-  const { db, format } = deps;
+  const { db, format, debt } = deps;
   const { formatMoney } = format;
-
-  function cloneDebts(rows) {
-    return rows.map((r) => ({
-      name: String(r.name || ""),
-      balance: Number(r.balance) || 0,
-      apr: Number(r.apr) || 0,
-      minimum: Number(r.minimum) || 0
-    }));
-  }
-
-  function sortDebts(debts, mode) {
-    if (mode === "snowball") {
-      debts.sort((a, b) => {
-        const balDiff = a.balance - b.balance;
-        if (balDiff !== 0) return balDiff;
-        return b.apr - a.apr;
-      });
-    } else {
-      debts.sort((a, b) => {
-        const aprDiff = b.apr - a.apr;
-        if (aprDiff !== 0) return aprDiff;
-        return a.balance - b.balance;
-      });
-    }
-  }
-
-  function activeDebts(debts) {
-    return debts.filter((d) => d.balance > 0.005);
-  }
-
-  function simulateSeries(rows, mode, extra) {
-    const debts = cloneDebts(rows);
-
-    const totalMinimums = debts.reduce((sum, d) => sum + d.minimum, 0);
-    const monthlyBudget = totalMinimums + extra;
-
-    if (monthlyBudget <= 0) {
-      throw new Error("Monthly debt budget must be greater than 0.");
-    }
-
-    const totals = [debts.reduce((sum, d) => sum + d.balance, 0)];
-
-    let months = 0;
-    let totalInterest = 0;
-
-    while (activeDebts(debts).length > 0 && months < 1200) {
-      months += 1;
-
-      for (const d of debts) {
-        if (d.balance <= 0.005) continue;
-
-        const monthlyRate = d.apr / 100 / 12;
-        const interest = d.balance * monthlyRate;
-        d.balance += interest;
-        totalInterest += interest;
-      }
-
-      const remaining = activeDebts(debts);
-      sortDebts(remaining, mode);
-
-      let paymentPool = monthlyBudget;
-
-      for (const d of remaining) {
-        if (paymentPool <= 0) break;
-
-        const minPay = Math.min(d.minimum, d.balance, paymentPool);
-        d.balance -= minPay;
-        paymentPool -= minPay;
-      }
-
-      let targets = activeDebts(debts);
-      sortDebts(targets, mode);
-
-      while (paymentPool > 0 && targets.length > 0) {
-        const target = targets[0];
-        const pay = Math.min(target.balance, paymentPool);
-        target.balance -= pay;
-        paymentPool -= pay;
-
-        targets = activeDebts(debts);
-        sortDebts(targets, mode);
-      }
-
-      for (const d of debts) {
-        if (d.balance < 0.005) d.balance = 0;
-      }
-
-      totals.push(debts.reduce((sum, d) => sum + d.balance, 0));
-    }
-
-    if (months >= 1200) {
-      throw new Error("Simulation exceeded safe limit.");
-    }
-
-    return {
-      totals,
-      months,
-      totalInterest,
-      startingDebt: totals[0]
-    };
-  }
+  const { getDebtRows, runDebtSimulation } = debt;
 
   function renderHelp() {
     return [
@@ -123,7 +23,7 @@ module.exports = function registerDebtCompareGraphHandler(bot, deps) {
       "",
       "*Notes*",
       "- Uses your current debts table.",
-      "- Graph compares remaining debt balance over time for both strategies."
+      "- Graph compares remaining total debt over time for both strategies."
     ].join("\n");
   }
 
@@ -131,6 +31,12 @@ module.exports = function registerDebtCompareGraphHandler(bot, deps) {
     return bot.sendMessage(chatId, renderHelp(), {
       parse_mode: "Markdown"
     });
+  }
+
+  function padSeries(series, length) {
+    const out = Array.isArray(series) ? [...series] : [];
+    while (out.length < length) out.push(0);
+    return out;
   }
 
   bot.onText(/^\/debt_compare_graph(?:@\w+)?(?:\s+(.*))?$/i, async (msg, match) => {
@@ -160,28 +66,26 @@ module.exports = function registerDebtCompareGraphHandler(bot, deps) {
         );
       }
 
-      const rows = db.prepare(`
-        SELECT name, balance, apr, minimum
-        FROM debts
-      `).all();
+      const rows = getDebtRows(db);
 
       if (!rows.length) {
         return bot.sendMessage(chatId, "No debts recorded.");
       }
 
-      const snowball = simulateSeries(rows, "snowball", extra);
-      const avalanche = simulateSeries(rows, "avalanche", extra);
+      const snowball = runDebtSimulation(rows, "snowball", extra);
+      const avalanche = runDebtSimulation(rows, "avalanche", extra);
+
+      if (
+        snowball.months == null || snowball.interest == null || !Array.isArray(snowball.totals) ||
+        avalanche.months == null || avalanche.interest == null || !Array.isArray(avalanche.totals)
+      ) {
+        return bot.sendMessage(chatId, "Simulation exceeded safe limit.");
+      }
 
       const maxMonths = Math.max(snowball.months, avalanche.months);
       const labels = Array.from({ length: maxMonths + 1 }, (_, i) =>
         i === 0 ? "Start" : `M${i}`
       );
-
-      function padSeries(series, length) {
-        const out = [...series];
-        while (out.length < length) out.push(0);
-        return out;
-      }
 
       const snowballSeries = padSeries(snowball.totals, labels.length);
       const avalancheSeries = padSeries(avalanche.totals, labels.length);
@@ -262,12 +166,12 @@ module.exports = function registerDebtCompareGraphHandler(bot, deps) {
         contentType: "image/png"
       });
 
-      const interestSaved = snowball.totalInterest - avalanche.totalInterest;
+      const interestSaved = snowball.interest - avalanche.interest;
 
       let summary = "💳 Debt Compare Graph\n\n";
       summary += `Extra Payment: ${formatMoney(extra)} / month\n\n`;
-      summary += `Snowball:  ${snowball.months} months, ${formatMoney(snowball.totalInterest)} interest\n`;
-      summary += `Avalanche: ${avalanche.months} months, ${formatMoney(avalanche.totalInterest)} interest\n\n`;
+      summary += `Snowball:  ${snowball.months} months, ${formatMoney(snowball.interest)} interest\n`;
+      summary += `Avalanche: ${avalanche.months} months, ${formatMoney(avalanche.interest)} interest\n\n`;
 
       if (interestSaved > 0) {
         summary += `Avalanche saves ${formatMoney(interestSaved)} in interest.`;
@@ -301,6 +205,6 @@ module.exports.help = {
   ],
   notes: [
     "Uses your current debts table.",
-    "Graph compares remaining debt balance over time for both strategies."
+    "Graph compares remaining total debt over time for both strategies."
   ]
 };
