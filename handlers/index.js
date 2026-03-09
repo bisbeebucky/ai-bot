@@ -13,10 +13,7 @@ function inferCommandNameFromFile(file) {
   return normalizeCommandName(path.basename(file, ".js"));
 }
 
-function normalizeHelpEntry(file, handler) {
-  const fallbackCommand = inferCommandNameFromFile(file);
-  const meta = handler.help || {};
-
+function normalizeHelpMeta(meta, fallbackCommand, file) {
   const command = normalizeCommandName(meta.command || fallbackCommand);
   const aliases = Array.isArray(meta.aliases)
     ? meta.aliases.map(normalizeCommandName).filter(Boolean)
@@ -36,6 +33,22 @@ function normalizeHelpEntry(file, handler) {
   };
 }
 
+function getHelpEntriesForHandler(file, handler) {
+  const fallbackCommand = inferCommandNameFromFile(file);
+
+  if (Array.isArray(handler.helpEntries) && handler.helpEntries.length > 0) {
+    return handler.helpEntries
+      .filter((entry) => entry && typeof entry === "object")
+      .map((entry) => normalizeHelpMeta(entry, fallbackCommand, file))
+      .filter((entry) => entry.command);
+  }
+
+  const meta = handler.help || {};
+  return [normalizeHelpMeta(meta, fallbackCommand, file)].filter(
+    (entry) => entry.command
+  );
+}
+
 function buildCommandRegistry(files) {
   const commands = new Map();
   const aliases = new Map();
@@ -50,10 +63,23 @@ function buildCommandRegistry(files) {
       continue;
     }
 
-    const entry = normalizeHelpEntry(file, handler);
+    const entries = getHelpEntriesForHandler(file, handler);
 
-    if (!entry.hidden) {
+    for (const entry of entries) {
+      if (entry.hidden) continue;
+
+      if (commands.has(entry.command)) {
+        console.warn(
+          `Duplicate help command "${entry.command}" from ${file}; keeping the last one loaded.`
+        );
+      }
+
       commands.set(entry.command, entry);
+
+      const existingIndex = ordered.findIndex((x) => x.command === entry.command);
+      if (existingIndex >= 0) {
+        ordered.splice(existingIndex, 1);
+      }
       ordered.push(entry);
 
       for (const alias of entry.aliases) {
@@ -67,6 +93,7 @@ function buildCommandRegistry(files) {
   function resolve(name) {
     const normalized = normalizeCommandName(name);
     if (!normalized) return null;
+
     if (commands.has(normalized)) return commands.get(normalized);
 
     const aliased = aliases.get(normalized);
