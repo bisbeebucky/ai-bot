@@ -1,19 +1,15 @@
 // handlers/life_projection.js
 module.exports = function registerLifeProjectionHandler(bot, deps) {
-  const { db, ledgerService } = deps;
+  const { db, ledgerService, finance, debt } = deps;
+  const {
+    getStartingAssets,
+    getRecurringMonthlyNet,
+    getDebtRows
+  } = finance;
+  const { runDebtSimulation } = debt;
 
   function money(n) {
     return `$${(Number(n) || 0).toFixed(2)}`;
-  }
-
-  function monthlyMultiplier(freq) {
-    switch ((freq || "").toLowerCase()) {
-      case "daily": return 30;
-      case "weekly": return 4.33;
-      case "monthly": return 1;
-      case "yearly": return 1 / 12;
-      default: return 0;
-    }
   }
 
   function yearsMonths(totalMonths) {
@@ -29,45 +25,6 @@ module.exports = function registerLifeProjectionHandler(bot, deps) {
     const month = d.toLocaleString("en-US", { month: "long" });
     const year = d.getFullYear();
     return `${month} ${year}`;
-  }
-
-  function getBankBalance() {
-    const balances = ledgerService.getBalances();
-    const bank = balances.find((b) => b.account === "assets:bank");
-    return Number(bank?.balance) || 0;
-  }
-
-  function getRecurringMonthlyNet() {
-    const rows = db.prepare(`
-      SELECT postings_json, frequency
-      FROM recurring_transactions
-    `).all();
-
-    let recurringIncome = 0;
-    let recurringBills = 0;
-
-    for (const r of rows) {
-      try {
-        const postings = JSON.parse(r.postings_json);
-        const bankLine = Array.isArray(postings)
-          ? postings.find((p) => p.account === "assets:bank")
-          : null;
-
-        if (!bankLine) continue;
-
-        const amt = Number(bankLine.amount) || 0;
-        const monthly = Math.abs(amt) * monthlyMultiplier(r.frequency);
-
-        if (amt > 0) recurringIncome += monthly;
-        if (amt < 0) recurringBills += monthly;
-      } catch { }
-    }
-
-    return {
-      income: recurringIncome,
-      bills: recurringBills,
-      net: recurringIncome - recurringBills
-    };
   }
 
   function getMonthlyActuals() {
@@ -99,99 +56,6 @@ module.exports = function registerLifeProjectionHandler(bot, deps) {
     };
   }
 
-  function getDebtRows() {
-    return db.prepare(`
-      SELECT name, balance, apr, minimum
-      FROM debts
-    `).all().map((r) => ({
-      name: r.name,
-      balance: Number(r.balance) || 0,
-      apr: Number(r.apr) || 0,
-      minimum: Number(r.minimum) || 0
-    }));
-  }
-
-  function simulateDebtPayoff(rows, mode, extra) {
-    const debts = rows.map((r) => ({ ...r }));
-
-    function sortDebts(arr) {
-      if (mode === "snowball") {
-        arr.sort((a, b) => {
-          const balDiff = a.balance - b.balance;
-          if (balDiff !== 0) return balDiff;
-          return b.apr - a.apr;
-        });
-      } else {
-        arr.sort((a, b) => {
-          const aprDiff = b.apr - a.apr;
-          if (aprDiff !== 0) return aprDiff;
-          return a.balance - b.balance;
-        });
-      }
-    }
-
-    function activeDebts() {
-      return debts.filter((d) => d.balance > 0.005);
-    }
-
-    const totalMinimums = debts.reduce((sum, d) => sum + d.minimum, 0);
-    const monthlyBudget = totalMinimums + extra;
-
-    if (monthlyBudget <= 0 || debts.length === 0) {
-      return { months: 0, interest: 0 };
-    }
-
-    let months = 0;
-    let totalInterest = 0;
-
-    while (activeDebts().length > 0 && months < 1200) {
-      months += 1;
-
-      for (const d of debts) {
-        if (d.balance <= 0.005) continue;
-        const monthlyRate = d.apr / 100 / 12;
-        const interest = d.balance * monthlyRate;
-        d.balance += interest;
-        totalInterest += interest;
-      }
-
-      const remaining = activeDebts();
-      sortDebts(remaining);
-
-      let paymentPool = monthlyBudget;
-
-      for (const d of remaining) {
-        if (paymentPool <= 0) break;
-        const minPay = Math.min(d.minimum, d.balance, paymentPool);
-        d.balance -= minPay;
-        paymentPool -= minPay;
-      }
-
-      let targets = activeDebts();
-      sortDebts(targets);
-
-      while (paymentPool > 0 && targets.length > 0) {
-        const target = targets[0];
-        const pay = Math.min(target.balance, paymentPool);
-        target.balance -= pay;
-        paymentPool -= pay;
-
-        targets = activeDebts();
-        sortDebts(targets);
-      }
-
-      for (const d of debts) {
-        if (d.balance < 0.005) d.balance = 0;
-      }
-    }
-
-    if (months >= 1200) {
-      return { months: null, interest: totalInterest };
-    }
-
-    return { months, interest: totalInterest };
-  }
-
   function simulateRetirement(startBalance, monthlySave, annualReturn, target) {
     if (monthlySave <= 0) return null;
 
@@ -212,17 +76,17 @@ module.exports = function registerLifeProjectionHandler(bot, deps) {
     const chatId = msg.chat.id;
 
     try {
-      const bankBalance = getBankBalance();
-      const recurring = getRecurringMonthlyNet();
+      const starting = getStartingAssets(ledgerService);
+      const bankBalance = starting.bank;
+      const recurring = getRecurringMonthlyNet(db);
       const monthly = getMonthlyActuals();
-      const debtRows = getDebtRows();
+      const debtRows = getDebtRows(db);
 
       const totalDebt = debtRows.reduce((sum, d) => sum + d.balance, 0);
       const totalMinimums = debtRows.reduce((sum, d) => sum + d.minimum, 0);
 
-      // Use avalanche by default for forward debt projection
       const debtExtra = Math.max(0, recurring.net);
-      const debtPlan = simulateDebtPayoff(debtRows, "avalanche", debtExtra);
+      const debtPlan = runDebtSimulation(debtRows, "avalanche", debtExtra);
 
       const annualExpenses = monthly.expenses * 12;
       const fiTarget = annualExpenses > 0 ? annualExpenses * 25 : 0;
@@ -265,6 +129,7 @@ module.exports = function registerLifeProjectionHandler(bot, deps) {
       if (fiTarget <= 0) {
         out += `FI Date:           unavailable\n`;
       } else if (fiMonths === null) {
+        out += `FI Target:         ${money(fiTarget)}\n`;
         out += `FI Date:           >100 years\n`;
       } else {
         const fiDate = futureDate(fiMonths);
