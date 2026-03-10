@@ -13,6 +13,16 @@ function inferCommandNameFromFile(file) {
   return normalizeCommandName(path.basename(file, ".js"));
 }
 
+function escapeMarkdown(text) {
+  return String(text || "")
+    .replace(/\\/g, "\\\\")
+    .replace(/`/g, "\\`")
+    .replace(/\*/g, "\\*")
+    .replace(/_/g, "\\_")
+    .replace(/\[/g, "\\[")
+    .replace(/\]/g, "\\]");
+}
+
 function normalizeHelpMeta(meta, fallbackCommand, file) {
   const command = normalizeCommandName(meta.command || fallbackCommand);
   const aliases = Array.isArray(meta.aliases)
@@ -137,20 +147,22 @@ function buildCommandRegistry(files) {
     if (!entry) return null;
 
     const lines = [
-      `*\\/${entry.command}*`,
-      entry.summary
+      `*\\/${escapeMarkdown(entry.command)}*`,
+      escapeMarkdown(entry.summary)
     ];
 
     if (entry.aliases.length) {
       lines.push("");
-      lines.push(`Aliases: ${entry.aliases.map((a) => `/${a}`).join(", ")}`);
+      lines.push(
+        `Aliases: ${entry.aliases.map((a) => `/${escapeMarkdown(a)}`).join(", ")}`
+      );
     }
 
     if (entry.usage.length) {
       lines.push("");
       lines.push("*Usage*");
       for (const line of entry.usage) {
-        lines.push(`- \`${line}\``);
+        lines.push(`- \`${escapeMarkdown(line)}\``);
       }
     }
 
@@ -158,7 +170,9 @@ function buildCommandRegistry(files) {
       lines.push("");
       lines.push("*Arguments*");
       for (const arg of entry.args) {
-        lines.push(`- \`${arg.name}\` — ${arg.description}`);
+        lines.push(
+          `- \`${escapeMarkdown(arg.name)}\` — ${escapeMarkdown(arg.description)}`
+        );
       }
     }
 
@@ -166,7 +180,7 @@ function buildCommandRegistry(files) {
       lines.push("");
       lines.push("*Examples*");
       for (const line of entry.examples) {
-        lines.push(`- \`${line}\``);
+        lines.push(`- \`${escapeMarkdown(line)}\``);
       }
     }
 
@@ -174,7 +188,7 @@ function buildCommandRegistry(files) {
       lines.push("");
       lines.push("*Notes*");
       for (const line of entry.notes) {
-        lines.push(`- ${line}`);
+        lines.push(`- ${escapeMarkdown(line)}`);
       }
     }
 
