@@ -88,7 +88,6 @@ Quick start:
 | `/milestones` | Key financial milestones | `/milestones` |
 | `/milestones_graph` | Visual timeline of milestones | `/milestones_graph` |
 | `/rich` | Long-term wealth timeline ($50k → $1M) | `/rich` |
-| `/buckets` | Snapshot of cash, savings, debt and net worth | `/buckets` |
 | `/dashboard` | Full financial snapshot | `/dashboard` |
 | `/today` | Daily money snapshot | `/today` |
 | `/dashboard` | Full financial snapshot | `/dashboard` |
@@ -123,6 +122,8 @@ Quick start:
 | `/upcoming` | Show upcoming recurring events | `/upcoming bill 60 25` |
 | `/year_projection` | 12-month projection using recurring cashflow | `/year_projection` |
 | `/dashboard_graph` | Visual dashboard of bank, debt and net worth | `/dashboard_graph 60` |
+| `/life_projection` | Long-term projection with debt-free and FI estimates | `/life_projection` |
+| `/runway` | Cashflow runway based on recent income, expenses, and recurring net | `/runway` |
 
 ---
 
