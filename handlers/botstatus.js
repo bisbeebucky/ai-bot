@@ -3,16 +3,39 @@ module.exports = function registerBotstatusHandler(bot, deps) {
   const { format } = deps;
   const { codeBlock } = format;
 
+  function formatBytes(bytes) {
+    const n = Number(bytes) || 0;
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  }
+
+  function formatUptime(sec) {
+    const s = Math.floor(Number(sec) || 0);
+    const days = Math.floor(s / 86400);
+    const hours = Math.floor((s % 86400) / 3600);
+    const mins = Math.floor((s % 3600) / 60);
+
+    if (days > 0) return `${days}d ${hours}h ${mins}m`;
+    if (hours > 0) return `${hours}h ${mins}m`;
+    return `${mins}m`;
+  }
+
   function renderHelp() {
     return [
       "*\\/botstatus*",
-      "Local bot runtime status.",
+      "Show local bot runtime status, including process ID, Node version, platform, uptime, and memory usage.",
       "",
       "*Usage*",
       "- `/botstatus`",
       "",
       "*Examples*",
-      "- `/botstatus`"
+      "- `/botstatus`",
+      "",
+      "*Notes*",
+      "- Shows local process runtime information only.",
+      "- Useful for verifying that the bot process is alive and stable."
     ].join("\n");
   }
 
@@ -44,7 +67,6 @@ module.exports = function registerBotstatusHandler(bot, deps) {
     }
 
     try {
-      const uptimeSeconds = Math.floor(process.uptime());
       const memory = process.memoryUsage();
 
       const out = [
@@ -54,10 +76,10 @@ module.exports = function registerBotstatusHandler(bot, deps) {
           `PID          ${process.pid}`,
           `Node         ${process.version}`,
           `Platform     ${process.platform}`,
-          `Uptime Sec   ${uptimeSeconds}`,
-          `RSS Bytes    ${memory.rss}`,
-          `Heap Used    ${memory.heapUsed}`,
-          `Heap Total   ${memory.heapTotal}`
+          `Uptime       ${formatUptime(process.uptime())}`,
+          `RSS          ${formatBytes(memory.rss)}`,
+          `Heap Used    ${formatBytes(memory.heapUsed)}`,
+          `Heap Total   ${formatBytes(memory.heapTotal)}`
         ].join("\n"))
       ].join("\n");
 
@@ -73,12 +95,16 @@ module.exports = function registerBotstatusHandler(bot, deps) {
 
 module.exports.help = {
   command: "botstatus",
-  category: "General",
-  summary: "Local bot runtime status.",
+  category: "Runtime",
+  summary: "Show local bot runtime status, including process ID, Node version, platform, uptime, and memory usage.",
   usage: [
     "/botstatus"
   ],
   examples: [
     "/botstatus"
+  ],
+  notes: [
+    "Shows local process runtime information only.",
+    "Useful for verifying that the bot process is alive and stable."
   ]
 };

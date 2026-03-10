@@ -114,7 +114,7 @@ Quick start:
 | Command | Description | Example |
 |-------|-------------|--------|
 | `/forecast` | Text forecast of upcoming balance changes | `/forecast` |
-| `/forecastgraph` | 30-day balance projection chart | `/forecastgraph` |
+| `/forecast_graph` | 30-day balance projection chart | `/forecast_graph` |
 | `/endmonth` | Project balance after the next 30 days of recurring income and bills | `/endmonth` |
 | `/untilpayday` | Shows the lowest balance before the next income arrives | `/untilpayday` |
 | `/danger` | Shows the date and event where your balance is lowest | `/danger` |

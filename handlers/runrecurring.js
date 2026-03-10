@@ -1,11 +1,11 @@
 // handlers/runrecurring.js
-module.exports = function registerRunRecurringHandler(bot, deps) {
+module.exports = function registerRunrecurringHandler(bot, deps) {
   const { recurringProcessor } = deps;
 
   function renderHelp() {
     return [
       "*\\/runrecurring*",
-      "Run recurring transactions now.",
+      "Run the recurring transaction processor now.",
       "",
       "*Usage*",
       "- `/runrecurring`",
@@ -14,7 +14,8 @@ module.exports = function registerRunRecurringHandler(bot, deps) {
       "- `/runrecurring`",
       "",
       "*Notes*",
-      "- Intended for manual triggering of the recurring processor."
+      "- Processes any recurring items that are due now.",
+      "- Useful for testing or manually forcing a recurring run."
     ].join("\n");
   }
 
@@ -45,21 +46,28 @@ module.exports = function registerRunRecurringHandler(bot, deps) {
       );
     }
 
+    if (!recurringProcessor || typeof recurringProcessor.processDueRecurring !== "function") {
+      return bot.sendMessage(chatId, "Recurring processor is not available.");
+    }
+
     try {
-      if (!recurringProcessor || typeof recurringProcessor.runDueTransactions !== "function") {
-        return bot.sendMessage(chatId, "Recurring processor is not available.");
+      const posted = Number(await recurringProcessor.processDueRecurring()) || 0;
+
+      let out = "🔁 Recurring Run\n\n";
+      out += "```\n";
+      out += `Posted: ${posted}\n`;
+      out += "```";
+
+      if (posted === 0) {
+        out += "\nNo recurring items were due.";
       }
 
-      const result = await recurringProcessor.runDueTransactions();
-      const message =
-        result && typeof result === "object" && "processed" in result
-          ? `✅ Recurring run complete. Processed: ${result.processed}`
-          : "✅ Recurring run complete.";
-
-      return bot.sendMessage(chatId, message);
+      return bot.sendMessage(chatId, out, {
+        parse_mode: "Markdown"
+      });
     } catch (err) {
       console.error("runrecurring error:", err);
-      return bot.sendMessage(chatId, "Error running recurring transactions.");
+      return bot.sendMessage(chatId, "Error running recurring processor.");
     }
   });
 };
@@ -67,7 +75,7 @@ module.exports = function registerRunRecurringHandler(bot, deps) {
 module.exports.help = {
   command: "runrecurring",
   category: "Recurring",
-  summary: "Run recurring transactions now.",
+  summary: "Run the recurring transaction processor now.",
   usage: [
     "/runrecurring"
   ],
@@ -75,6 +83,7 @@ module.exports.help = {
     "/runrecurring"
   ],
   notes: [
-    "Intended for manual triggering of the recurring processor."
+    "Processes any recurring items that are due now.",
+    "Useful for testing or manually forcing a recurring run."
   ]
 };
