@@ -90,7 +90,6 @@ Quick start:
 | `/rich` | Long-term wealth timeline ($50k → $1M) | `/rich` |
 | `/dashboard` | Full financial snapshot | `/dashboard` |
 | `/today` | Daily money snapshot | `/today` |
-| `/dashboard` | Full financial snapshot | `/dashboard` |
 | `/dashboard_graph` | Visual dashboard of bank, debt and net worth | `/dashboard_graph` |
 | `/next` | Single recommended financial action right now | `/next` |
 | `/timeline` | Full money roadmap from now to major milestones | `/timeline` |
