@@ -10,7 +10,9 @@
 
 📈 Financial graphs
 
-🤖 AI transaction parsing
+🦞 Built with OpenClaw for AI-powered Telegram interaction
+
+🤖 AI transaction parsing with Natural Language
 
 ## Designed for simple Telegram input while maintaining accurate accounting internally.
 
