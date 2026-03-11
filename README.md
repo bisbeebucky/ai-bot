@@ -124,7 +124,9 @@ node index.js</code></pre>
 <pre><code>I got paid 5000 windfall
 bought groceries for 35
 paid rent 1200
-coffee 5</code></pre>
+5 on coffee
+</code></pre>
+
 
 <p>
   These messages are automatically converted into balanced ledger transactions.
