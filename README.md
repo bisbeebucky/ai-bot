@@ -7,7 +7,8 @@
 </p>
 
 <p align="center">
-⭐ If you find this project useful, please consider giving it a star ⭐
+⭐  If you find this project useful, please consider giving it a star    ⭐
+⭐  It helps others discover the project and supports future development ⭐
 </p>
 
 <p align="center">
