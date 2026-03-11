@@ -237,7 +237,7 @@ Status:          ⚠️ Tight</code></pre>
 </ul>
 
 <ul>
-<li>Please star the project, it helps others discover the project and supports future development.
+<li>If this project helps you manage your finances or avoid overdrafts, consider giving it a ⭐
 </ul>
 
 <p>
