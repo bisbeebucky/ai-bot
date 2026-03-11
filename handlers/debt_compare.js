@@ -1,10 +1,8 @@
 // handlers/debt_compare.js
-const hledger = require("hledger/lib");
 module.exports = function registerDebtCompareHandler(bot, deps) {
   const { db, format, debt } = deps;
   const { formatMoney, renderTable, codeBlock } = format;
   const { getDebtRows, runDebtSimulation } = debt;
-  hledger
 
   function renderHelp() {
     return [

@@ -110,26 +110,3 @@ module.exports = function registerWithdrawHandler(bot, deps) {
   });
 };
 
-module.exports.help = {
-  command: "withdraw",
-  category: "Entry",
-  summary: "Record money leaving assets:bank to expenses:misc.",
-  usage: [
-    "/withdraw <amount>",
-    "/withdraw <amount> <description>"
-  ],
-  args: [
-    { name: "<amount>", description: "Positive amount to withdraw." },
-    { name: "<description>", description: "Optional description. Defaults to `withdraw`." }
-  ],
-  examples: [
-    "/withdraw 50",
-    "/withdraw 50 groceries",
-    "/withdraw 18.25 snacks"
-  ],
-  notes: [
-    "Debits expenses:misc.",
-    "Credits assets:bank.",
-    "Date defaults to today."
-  ]
-};

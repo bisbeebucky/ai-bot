@@ -76,6 +76,7 @@ Quick start:
 | `/status` | Financial dashboard summary | `/status` |
 | `/money` | Financial snapshot | `/money` |
 | `/financial_health` | Financial scorecard | `/financial_health` |
+| `/transfer` | move money between `bank` and `savings` | (example: `/transfer 89 savings bank)` |
 
 ---
 
