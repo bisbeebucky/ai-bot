@@ -10,27 +10,14 @@ Kalverion_bot is an AI-powered Telegram personal finance assistant that uses dou
 
 ---
 
-## 📱 Demo
-
-Financial forecasting directly inside Telegram.
-
-<img src="docs/IMG_0139.PNG" width="420">
-
----
-
-## Why I Built This
-
-I started this project after getting hit with **overdraft fees** and realizing I had no clear view of my short-term cashflow.
-
-Most finance apps show what already happened.  
-This bot focuses on **what will happen next** — predicting your balance, warning about danger windows, and helping you avoid overdrafts before they occur.
-
----
-
 <table>
 <tr>
 
-<td width="55%" style="padding-right:30px; vertical-align:top;">
+<td width="45%" style="vertical-align:top;">
+<img src="docs/IMG_0139.PNG" width="420">
+</td>
+
+<td width="55%" style="padding-left:30px; vertical-align:top;">
 
 ## Features
 
@@ -50,12 +37,17 @@ This bot focuses on **what will happen next** — predicting your balance, warni
 
 </td>
 
-<td width="45%" style="vertical-align:top;">
-<img src="docs/IMG_0138.PNG" width="420">
-</td>
-
 </tr>
 </table>
+
+---
+
+## Why I Built This
+
+I started this project after getting hit with **overdraft fees** and realizing I had no clear view of my short-term cashflow.
+
+Most finance apps show what already happened.  
+This bot focuses on **what will happen next** — predicting your balance, warning about danger windows, and helping you avoid overdrafts before they occur.
 
 ---
 
