@@ -42,3 +42,10 @@ registerAllHandlers(bot, deps);
 registerCronJobs({ recurringProcessor: deps.recurringProcessor });
 
 console.log("Bot started.");
+
+console.log(`
+Kalverion_bot running.
+
+If you find this project useful please give it a star:
+https://github.com/bisbeebucky/ai-bot
+`);
