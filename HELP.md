@@ -217,3 +217,6 @@ bought groceries for 20
 Salary 1000
 I got paid 5000 windfall
 paid rent 1200
+
+⭐ If you find Kalverion_bot useful please consider starring the repo:
+https://github.com/bisbeebucky/ai-bot
