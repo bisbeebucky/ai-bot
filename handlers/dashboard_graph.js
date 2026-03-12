@@ -30,7 +30,7 @@ module.exports = function registerDashboardGraphHandler(bot, deps) {
     });
   }
 
-  function formatSummaryRow(label, value, width = 16) {
+  function formatSummaryRow(label, value, width = 18) {
     return `${String(label).padEnd(width)} ${value}`;
   }
 
@@ -61,6 +61,7 @@ module.exports = function registerDashboardGraphHandler(bot, deps) {
       const debtRows = getDebtRows(db);
 
       const bankNow = starting.bank;
+      const savingsNow = starting.savings;
       const totalAssetsNow = starting.total;
       const debtNow = debtRows.reduce((sum, d) => sum + d.balance, 0);
       const netWorthNow = totalAssetsNow - debtNow;
@@ -169,7 +170,9 @@ module.exports = function registerDashboardGraphHandler(bot, deps) {
         "",
         codeBlock([
           formatSummaryRow("Months", String(months)),
+          "",
           formatSummaryRow("Bank Now", formatMoney(bankNow)),
+          formatSummaryRow("Savings Now", formatMoney(savingsNow)),
           formatSummaryRow("Assets Now", formatMoney(totalAssetsNow)),
           formatSummaryRow("Debt Now", formatMoney(debtNow)),
           formatSummaryRow("Net Worth Now", formatMoney(netWorthNow))
