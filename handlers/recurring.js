@@ -20,8 +20,11 @@ module.exports = function registerRecurringHandler(bot, deps) {
     return /^(help|--help|-h)$/i.test(String(raw || "").trim());
   }
 
-  function sendMarkdown(chatId, text) {
-    return bot.sendMessage(chatId, text, { parse_mode: "Markdown" });
+  function sendMarkdown(chatId, text, extra = {}) {
+    return bot.sendMessage(chatId, text, {
+      parse_mode: "Markdown",
+      ...extra
+    });
   }
 
   function ymd(dateObj) {
@@ -243,6 +246,35 @@ module.exports = function registerRecurringHandler(bot, deps) {
       "- `/recurring_delete 3`",
       "- `/recurring_delete a1b2c3`"
     ].join("\n");
+  }
+
+  function findRecurringRowByToken(token) {
+    if (/^\d+$/.test(token)) {
+      return db.prepare(`
+        SELECT id, hash, description, next_due_date
+        FROM recurring_transactions
+        WHERE id = ?
+      `).get(Number(token));
+    }
+
+    return db.prepare(`
+      SELECT id, hash, description, next_due_date
+      FROM recurring_transactions
+      WHERE hash LIKE ?
+      ORDER BY id DESC
+      LIMIT 1
+    `).get(`${token}%`);
+  }
+
+  function deleteRecurringRowById(id) {
+    db.transaction(() => {
+      db.prepare(`DELETE FROM recurring_events WHERE recurring_id = ?`).run(id);
+      db.prepare(`DELETE FROM recurring_transactions WHERE id = ?`).run(id);
+    })();
+  }
+
+  function recurringDeleteCallback(action, recurringId, userId) {
+    return `recdel:${action}:${recurringId}:${userId}`;
   }
 
   // /recurring
@@ -599,35 +631,131 @@ module.exports = function registerRecurringHandler(bot, deps) {
       }
 
       const token = parsed[1];
-      let row = null;
-
-      if (/^\d+$/.test(token)) {
-        row = db.prepare(`
-          SELECT id, hash, description, next_due_date
-          FROM recurring_transactions
-          WHERE id = ?
-        `).get(Number(token));
-      } else {
-        row = db.prepare(`
-          SELECT id, hash, description, next_due_date
-          FROM recurring_transactions
-          WHERE hash LIKE ?
-          ORDER BY id DESC
-          LIMIT 1
-        `).get(`${token}%`);
-      }
+      const row = findRecurringRowByToken(token);
 
       if (!row) {
         return bot.sendMessage(chatId, "Not found.");
       }
 
-      db.transaction(() => {
-        db.prepare(`DELETE FROM recurring_events WHERE recurring_id = ?`).run(row.id);
-        db.prepare(`DELETE FROM recurring_transactions WHERE id = ?`).run(row.id);
-      })();
-
       return sendMarkdown(
         chatId,
+        [
+          "⚠️ *Delete this recurring item?*",
+          "",
+          codeBlock([
+            `ID          ${row.id}`,
+            `Ref         ${String(row.hash).slice(0, 6)}`,
+            `Description ${row.description}`,
+            `Next Due    ${row.next_due_date}`
+          ].join("\n"))
+        ].join("\n"),
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [
+                {
+                  text: "✅ Yes, delete",
+                  callback_data: recurringDeleteCallback("yes", row.id, msg.from.id)
+                },
+                {
+                  text: "❌ Cancel",
+                  callback_data: recurringDeleteCallback("cancel", row.id, msg.from.id)
+                }
+              ]
+            ]
+          }
+        }
+      );
+    } catch (err) {
+      console.error("recurring delete error:", err);
+      return bot.sendMessage(chatId, "Error preparing recurring delete.");
+    }
+  });
+
+  bot.on("callback_query", async (query) => {
+    const data = String(query?.data || "");
+    const match = data.match(/^recdel:(yes|cancel):(\d+):(\d+)$/);
+
+    if (!match) {
+      return;
+    }
+
+    const action = match[1];
+    const recurringId = Number(match[2]);
+    const ownerUserId = Number(match[3]);
+    const chatId = query.message?.chat?.id;
+    const messageId = query.message?.message_id;
+
+    if (!chatId || !messageId) {
+      try {
+        await bot.answerCallbackQuery(query.id, {
+          text: "Missing message context."
+        });
+      } catch (_) {
+        // ignore
+      }
+      return;
+    }
+
+    if (Number(query.from?.id) !== ownerUserId) {
+      try {
+        await bot.answerCallbackQuery(query.id, {
+          text: "This button is not for you."
+        });
+      } catch (_) {
+        // ignore
+      }
+      return;
+    }
+
+    if (action === "cancel") {
+      try {
+        await bot.answerCallbackQuery(query.id, {
+          text: "Deletion cancelled."
+        });
+      } catch (_) {
+        // ignore
+      }
+
+      return bot.editMessageText("Cancelled.", {
+        chat_id: chatId,
+        message_id: messageId
+      }).catch(() => { });
+    }
+
+    try {
+      const row = db.prepare(`
+        SELECT id, hash, description, next_due_date
+        FROM recurring_transactions
+        WHERE id = ?
+      `).get(recurringId);
+
+      if (!row) {
+        try {
+          await bot.answerCallbackQuery(query.id, {
+            text: "Item already deleted or not found."
+          });
+        } catch (_) {
+          // ignore
+        }
+
+        return bot.editMessageText("Recurring item not found.", {
+          chat_id: chatId,
+          message_id: messageId
+        }).catch(() => { });
+      }
+
+      deleteRecurringRowById(row.id);
+
+      try {
+        await bot.answerCallbackQuery(query.id, {
+          text: "Recurring item deleted."
+        });
+      } catch (_) {
+        // ignore
+      }
+
+      return bot.editMessageText(
         [
           "🗑️ *Recurring item deleted*",
           "",
@@ -637,11 +765,28 @@ module.exports = function registerRecurringHandler(bot, deps) {
             `Description ${row.description}`,
             `Next Due    ${row.next_due_date}`
           ].join("\n"))
-        ].join("\n")
-      );
+        ].join("\n"),
+        {
+          chat_id: chatId,
+          message_id: messageId,
+          parse_mode: "Markdown"
+        }
+      ).catch(() => { });
     } catch (err) {
-      console.error("recurring delete error:", err);
-      return bot.sendMessage(chatId, "Error deleting recurring item.");
+      console.error("recurring delete confirm error:", err);
+
+      try {
+        await bot.answerCallbackQuery(query.id, {
+          text: "Error deleting recurring item."
+        });
+      } catch (_) {
+        // ignore
+      }
+
+      return bot.editMessageText("Error deleting recurring item.", {
+        chat_id: chatId,
+        message_id: messageId
+      }).catch(() => { });
     }
   });
 };
