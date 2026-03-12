@@ -3,7 +3,7 @@ const { ChartJSNodeCanvas } = require("chartjs-node-canvas");
 
 module.exports = function registerDebtCompareGraphHandler(bot, deps) {
   const { db, format, debt } = deps;
-  const { formatMoney } = format;
+  const { formatMoney, codeBlock } = format;
   const { getDebtRows, runDebtSimulation } = debt;
 
   function renderHelp() {
@@ -37,6 +37,14 @@ module.exports = function registerDebtCompareGraphHandler(bot, deps) {
     const out = Array.isArray(series) ? [...series] : [];
     while (out.length < length) out.push(0);
     return out;
+  }
+
+  function formatSummaryRow(label, months, interest) {
+    return [
+      String(label).padEnd(10),
+      String(months).padStart(6),
+      String(interest).padStart(14)
+    ].join(" ");
   }
 
   bot.onText(/^\/debt_compare_graph(?:@\w+)?(?:\s+(.*))?$/i, async (msg, match) => {
@@ -168,20 +176,32 @@ module.exports = function registerDebtCompareGraphHandler(bot, deps) {
 
       const interestSaved = snowball.interest - avalanche.interest;
 
-      let summary = "💳 Debt Compare Graph\n\n";
-      summary += `Extra Payment: ${formatMoney(extra)} / month\n\n`;
-      summary += `Snowball:  ${snowball.months} months, ${formatMoney(snowball.interest)} interest\n`;
-      summary += `Avalanche: ${avalanche.months} months, ${formatMoney(avalanche.interest)} interest\n\n`;
-
+      let resultLine;
       if (interestSaved > 0) {
-        summary += `Avalanche saves ${formatMoney(interestSaved)} in interest.`;
+        resultLine = `Winner        Avalanche saves ${formatMoney(interestSaved)}`;
       } else if (interestSaved < 0) {
-        summary += `Snowball saves ${formatMoney(Math.abs(interestSaved))} in interest.`;
+        resultLine = `Winner        Snowball saves ${formatMoney(Math.abs(interestSaved))}`;
       } else {
-        summary += "Both strategies cost the same in interest.";
+        resultLine = "Winner        Tie";
       }
 
-      return bot.sendMessage(chatId, summary);
+      const summary = [
+        "💳 Debt Compare Graph",
+        "",
+        `Extra Payment: ${formatMoney(extra)} / month`,
+        "",
+        codeBlock([
+          formatSummaryRow("Strategy", "Months", "Interest"),
+          formatSummaryRow("Snowball", snowball.months, formatMoney(snowball.interest)),
+          formatSummaryRow("Avalanche", avalanche.months, formatMoney(avalanche.interest)),
+          "",
+          resultLine
+        ].join("\n"))
+      ].join("\n");
+
+      return bot.sendMessage(chatId, summary, {
+        parse_mode: "Markdown"
+      });
     } catch (err) {
       console.error("debt_compare_graph error:", err);
       return bot.sendMessage(chatId, "Error generating debt compare graph.");

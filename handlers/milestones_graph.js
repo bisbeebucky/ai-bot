@@ -2,7 +2,8 @@
 const { ChartJSNodeCanvas } = require("chartjs-node-canvas");
 
 module.exports = function registerMilestonesGraphHandler(bot, deps) {
-  const { db, ledgerService, finance } = deps;
+  const { db, ledgerService, finance, format } = deps;
+  const { codeBlock } = format;
   const {
     futureMonthLabel,
     getStartingAssets,
@@ -14,8 +15,73 @@ module.exports = function registerMilestonesGraphHandler(bot, deps) {
     simulateNetWorthMilestoneMonths
   } = finance;
 
-  bot.onText(/^\/milestones_graph(@\w+)?$/i, async (msg) => {
+  function renderHelp() {
+    return [
+      "*\\/milestones_graph*",
+      "Generate a milestone graph for debt payoff, FI, and net worth targets.",
+      "",
+      "*Usage*",
+      "- `/milestones_graph`",
+      "",
+      "*Examples*",
+      "- `/milestones_graph`",
+      "",
+      "*Notes*",
+      "- Shows projected month counts for debt-free, FI, and net worth milestones.",
+      "- Net worth targets currently include `10k`, `25k`, `50k`, and `100k`."
+    ].join("\n");
+  }
+
+  function sendHelp(chatId) {
+    return bot.sendMessage(chatId, renderHelp(), {
+      parse_mode: "Markdown"
+    });
+  }
+
+  function splitFutureLabel(text) {
+    const raw = String(text || "").trim();
+    const parts = raw.match(/^([A-Za-z]+)\s+(\d{4})$/);
+
+    if (!parts) {
+      return { month: raw, year: "" };
+    }
+
+    return {
+      month: parts[1],
+      year: parts[2]
+    };
+  }
+
+  function formatSummaryRow(label, dateText, monthsValue) {
+    const parts = splitFutureLabel(dateText);
+    return [
+      String(label).padEnd(12),
+      String(parts.month).padEnd(10),
+      String(parts.year).padEnd(4),
+      `(${monthsValue}m)`.padStart(6)
+    ].join(" ");
+  }
+
+  bot.onText(/^\/milestones_graph(?:@\w+)?(?:\s+(.*))?$/i, async (msg, match) => {
     const chatId = msg.chat.id;
+    const raw = String(match?.[1] || "").trim();
+
+    if (raw) {
+      if (/^(help|--help|-h)$/i.test(raw)) {
+        return sendHelp(chatId);
+      }
+
+      return bot.sendMessage(
+        chatId,
+        [
+          "The `/milestones_graph` command does not take arguments.",
+          "",
+          "Usage:",
+          "`/milestones_graph`"
+        ].join("\n"),
+        { parse_mode: "Markdown" }
+      );
+    }
 
     try {
       const starting = getStartingAssets(ledgerService);
@@ -141,15 +207,38 @@ module.exports = function registerMilestonesGraphHandler(bot, deps) {
         contentType: "image/png"
       });
 
-      let summary = "📍 Milestones Graph\n\n";
-      for (let i = 0; i < labels.length; i++) {
-        summary += `• ${labels[i]}: ${dateLabels[i]} (${values[i]}m)\n`;
-      }
+      const summary = [
+        "📍 Milestones Graph",
+        "",
+        codeBlock(
+          labels.map((label, i) =>
+            formatSummaryRow(label, dateLabels[i], values[i])
+          ).join("\n")
+        )
+      ].join("\n");
 
-      return bot.sendMessage(chatId, summary);
+      return bot.sendMessage(chatId, summary, {
+        parse_mode: "Markdown"
+      });
     } catch (err) {
       console.error("milestones_graph error:", err);
       return bot.sendMessage(chatId, "Error generating milestones graph.");
     }
   });
+};
+
+module.exports.help = {
+  command: "milestones_graph",
+  category: "Forecasting",
+  summary: "Generate a milestone graph for debt payoff, FI, and net worth targets.",
+  usage: [
+    "/milestones_graph"
+  ],
+  examples: [
+    "/milestones_graph"
+  ],
+  notes: [
+    "Shows projected month counts for debt-free, FI, and net worth milestones.",
+    "Net worth targets currently include 10k, 25k, 50k, and 100k."
+  ]
 };
