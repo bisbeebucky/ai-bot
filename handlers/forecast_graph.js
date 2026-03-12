@@ -123,7 +123,7 @@ module.exports = function registerForecastGraphHandler(bot, deps) {
 
           recurringLines.push(
             `${date}${desc}${amount}\n` +
-            `             ${freq} ${ref}`
+            `${freq} ${ref}`
           );
         }
       } catch {

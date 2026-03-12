@@ -1,7 +1,7 @@
-// handlers/future.js
+// handlers/future_graph.js
 const { ChartJSNodeCanvas } = require("chartjs-node-canvas");
 
-module.exports = function registerFutureHandler(bot, deps) {
+module.exports = function registerFutureGraphHandler(bot, deps) {
   const { ledgerService, format, finance, debtProjection } = deps;
   const { formatMoney } = format;
   const {
@@ -34,19 +34,19 @@ module.exports = function registerFutureHandler(bot, deps) {
 
   function renderHelp() {
     return [
-      "*\\/future*",
+      "*\\/future_graph*",
       "Generate a forward-looking graph of cash, debt, and net worth over the next few months.",
       "",
       "*Usage*",
-      "- `/future`",
-      "- `/future <months>`",
+      "- `/future_graph`",
+      "- `/future_graph <months>`",
       "",
       "*Arguments*",
       "- `<months>` — Optional horizon from `1` to `60`. Defaults to `12`.",
       "",
       "*Examples*",
-      "- `/future`",
-      "- `/future 24`",
+      "- `/future_graph`",
+      "- `/future_graph 24`",
       "",
       "*Notes*",
       "- Starting assets include `assets:bank` and `assets:savings`.",
@@ -54,7 +54,7 @@ module.exports = function registerFutureHandler(bot, deps) {
     ].join("\n");
   }
 
-  bot.onText(/^\/(future|life_projection_graph)(?:@\w+)?(?:\s+(.*))?$/i, async (msg, match) => {
+  bot.onText(/^\/(future_graph|life_projection_graph)(?:@\w+)?(?:\s+(.*))?$/i, async (msg, match) => {
     const chatId = msg.chat.id;
     const raw = String(match?.[2] || "").trim();
 
@@ -69,8 +69,8 @@ module.exports = function registerFutureHandler(bot, deps) {
         return bot.sendMessage(
           chatId,
           [
-            "Usage: `/future [months]`",
-            "Example: `/future 24`"
+            "Usage: `/future_graph [months]`",
+            "Example: `/future_graph 24`"
           ].join("\n"),
           { parse_mode: "Markdown" }
         );
@@ -237,7 +237,7 @@ module.exports = function registerFutureHandler(bot, deps) {
       const image = await chartJSNodeCanvas.renderToBuffer(configuration);
 
       await bot.sendPhoto(chatId, image, {
-        filename: "future.png",
+        filename: "future_graph.png",
         contentType: "image/png"
       });
 
@@ -277,20 +277,20 @@ module.exports = function registerFutureHandler(bot, deps) {
 
       return bot.sendMessage(chatId, summary);
     } catch (err) {
-      console.error("future error:", err);
+      console.error("future_graph error:", err);
       return bot.sendMessage(chatId, "Error generating future graph.");
     }
   });
 };
 
 module.exports.help = {
-  command: "future",
+  command: "future_graph",
   aliases: ["life_projection_graph"],
   category: "Forecasting",
   summary: "Generate a forward-looking graph of assets, debt, and net worth over the next few months.",
   usage: [
-    "/future",
-    "/future <months>",
+    "/future_graph",
+    "/future_graph <months>",
     "/life_projection_graph",
     "/life_projection_graph <months>"
   ],
@@ -298,8 +298,8 @@ module.exports.help = {
     { name: "<months>", description: "Optional horizon from 1 to 60. Defaults to 12." }
   ],
   examples: [
-    "/future",
-    "/future 24",
+    "/future_graph",
+    "/future_graph 24",
     "/life_projection_graph 18"
   ],
   notes: [

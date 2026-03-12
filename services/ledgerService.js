@@ -155,12 +155,56 @@ module.exports = function createLedgerService(db) {
   }
 
   function getRecentTransactions(limit = 5) {
-    return db.prepare(`
-      SELECT id, hash, date, description
-      FROM transactions
-      ORDER BY id DESC
+    const rows = db.prepare(`
+      SELECT
+        t.id,
+        t.hash,
+        t.date,
+        t.description,
+        COALESCE(
+          (
+            SELECT p.amount
+            FROM postings p
+            JOIN accounts a ON a.id = p.account_id
+            WHERE p.transaction_id = t.id
+              AND a.name = 'assets:bank'
+            LIMIT 1
+          ),
+          (
+            SELECT p.amount
+            FROM postings p
+            JOIN accounts a ON a.id = p.account_id
+            WHERE p.transaction_id = t.id
+              AND a.name = 'assets:savings'
+            LIMIT 1
+          ),
+          (
+            SELECT
+              CASE
+                WHEN a.name LIKE 'expenses:%' THEN -ABS(p.amount)
+                WHEN a.name LIKE 'income:%' THEN ABS(p.amount)
+                ELSE p.amount
+              END
+            FROM postings p
+            JOIN accounts a ON a.id = p.account_id
+            WHERE p.transaction_id = t.id
+            ORDER BY ABS(p.amount) DESC, p.id ASC
+            LIMIT 1
+          ),
+          0
+        ) AS amount
+      FROM transactions t
+      ORDER BY t.id DESC
       LIMIT ?
     `).all(limit);
+
+    return rows.map((r) => ({
+      id: r.id,
+      hash: r.hash,
+      date: r.date,
+      description: r.description,
+      amount: Number(r.amount) || 0
+    }));
   }
 
   function deleteTransactionByHashPrefix(prefix) {

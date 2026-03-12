@@ -85,7 +85,7 @@ Quick start:
 | Command | Description | Example |
 |---------|-------------|---------|
 | `/money_graph` | Graph of bank, debt and net worth projection | `/money_graph` |
-| `/future` | Financial projection graph | `/future 24` |
+| `/future_graph` | Financial projection graph | `/future_graph 24` |
 | `/milestones` | Key financial milestones | `/milestones` |
 | `/milestones_graph` | Visual timeline of milestones | `/milestones_graph` |
 | `/rich` | Long-term wealth timeline ($50k → $1M) | `/rich` |
