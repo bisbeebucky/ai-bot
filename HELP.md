@@ -174,7 +174,7 @@ Quick start:
 | `/debt_add` | Add a debt | `/debt_add chase 5400 21.9 125` |
 | `/debt_edit` | Edit balance, APR, or minimum | `/debt_edit chase apr 19.9` |
 | `/debt_pay` | Apply payment to a debt | `/debt_pay chase 200` |
-| `/debts` | List all debts | `/debts` |
+| `/debts_list` | List all debts | `/debts_list` |
 | `/debt_total` | Show total debt summary | `/debt_total` |
 | `/debt_strategy` | Show payoff order | `/debt_strategy avalanche` |
 | `/debt_plan` | Show payment plan with extra payment | `/debt_plan avalanche 300` |
