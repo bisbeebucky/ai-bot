@@ -3,7 +3,7 @@ const { ChartJSNodeCanvas } = require("chartjs-node-canvas");
 
 module.exports = function registerFutureGraphHandler(bot, deps) {
   const { ledgerService, format, finance, debtProjection } = deps;
-  const { formatMoney } = format;
+  const { formatMoney, codeBlock } = format;
   const {
     futureMonthLabel,
     getStartingAssets,
@@ -52,6 +52,10 @@ module.exports = function registerFutureGraphHandler(bot, deps) {
       "- Starting assets include `assets:bank` and `assets:savings`.",
       "- Alias command: `/life_projection_graph`."
     ].join("\n");
+  }
+
+  function formatSummaryRow(label, value, width = 20) {
+    return `${String(label).padEnd(width)} ${value}`;
   }
 
   bot.onText(/^\/(future_graph|life_projection_graph)(?:@\w+)?(?:\s+(.*))?$/i, async (msg, match) => {
@@ -264,18 +268,25 @@ module.exports = function registerFutureGraphHandler(bot, deps) {
       const summary = [
         "🔮 Financial Future",
         "",
-        `Horizon: ${horizon} month(s)`,
-        `Bank Now: ${formatMoney(starting.bank)}`,
-        `Savings Now: ${formatMoney(starting.savings)}`,
-        `Assets Now: ${formatMoney(startingAssets)}`,
-        `Recurring Net: ${recurring.net >= 0 ? "+" : "-"}${formatMoney(Math.abs(recurring.net))} / month`,
-        `${horizon}-Month Assets: ${formatMoney(cashSeries[cashSeries.length - 1])}`,
-        `${horizon}-Month Net Worth: ${formatMoney(finalNetWorth)}`,
-        debtPayoffText,
-        fiText
+        codeBlock([
+          formatSummaryRow("Horizon", `${horizon} month(s)`),
+          formatSummaryRow("Bank Now", formatMoney(starting.bank)),
+          formatSummaryRow("Savings Now", formatMoney(starting.savings)),
+          formatSummaryRow("Assets Now", formatMoney(startingAssets)),
+          formatSummaryRow(
+            "Recurring Net",
+            `${recurring.net >= 0 ? "+" : "-"}${formatMoney(Math.abs(recurring.net))} / month`
+          ),
+          formatSummaryRow(`${horizon}-Month Assets`, formatMoney(cashSeries[cashSeries.length - 1])),
+          formatSummaryRow(`${horizon}-Month Net Worth`, formatMoney(finalNetWorth)),
+          formatSummaryRow("Debt Status", debtPayoffText),
+          formatSummaryRow("FI Status", fiText)
+        ].join("\n"))
       ].join("\n");
 
-      return bot.sendMessage(chatId, summary);
+      return bot.sendMessage(chatId, summary, {
+        parse_mode: "Markdown"
+      });
     } catch (err) {
       console.error("future_graph error:", err);
       return bot.sendMessage(chatId, "Error generating future graph.");
