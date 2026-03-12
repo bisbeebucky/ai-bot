@@ -3,7 +3,7 @@ const { ChartJSNodeCanvas } = require("chartjs-node-canvas");
 
 module.exports = function registerDashboardGraphHandler(bot, deps) {
   const { db, ledgerService, format, finance } = deps;
-  const { formatMoney } = format;
+  const { formatMoney, codeBlock } = format;
   const { getDebtRows, getStartingAssets, getRecurringMonthlyNet } = finance;
 
   function renderHelp() {
@@ -28,6 +28,10 @@ module.exports = function registerDashboardGraphHandler(bot, deps) {
     return bot.sendMessage(chatId, renderHelp(), {
       parse_mode: "Markdown"
     });
+  }
+
+  function formatSummaryRow(label, value, width = 16) {
+    return `${String(label).padEnd(width)} ${value}`;
   }
 
   bot.onText(/^\/dashboard_graph(?:@\w+)?(?:\s+(.*))?$/i, async (msg, match) => {
@@ -163,13 +167,18 @@ module.exports = function registerDashboardGraphHandler(bot, deps) {
       const summary = [
         "📊 Dashboard Graph",
         "",
-        `Bank Now: ${formatMoney(bankNow)}`,
-        `Assets Now: ${formatMoney(totalAssetsNow)}`,
-        `Debt Now: ${formatMoney(debtNow)}`,
-        `Net Worth Now: ${formatMoney(netWorthNow)}`
+        codeBlock([
+          formatSummaryRow("Months", String(months)),
+          formatSummaryRow("Bank Now", formatMoney(bankNow)),
+          formatSummaryRow("Assets Now", formatMoney(totalAssetsNow)),
+          formatSummaryRow("Debt Now", formatMoney(debtNow)),
+          formatSummaryRow("Net Worth Now", formatMoney(netWorthNow))
+        ].join("\n"))
       ].join("\n");
 
-      return bot.sendMessage(chatId, summary);
+      return bot.sendMessage(chatId, summary, {
+        parse_mode: "Markdown"
+      });
     } catch (err) {
       console.error("dashboard_graph error:", err);
       return bot.sendMessage(chatId, "Error generating dashboard graph.");

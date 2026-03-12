@@ -2,8 +2,8 @@
 const { ChartJSNodeCanvas } = require("chartjs-node-canvas");
 
 module.exports = function registerMoneyGraphHandler(bot, deps) {
-  const { db, format, finance, debt, debtProjection } = deps;
-  const { formatMoney } = format;
+  const { db, format, finance, debtProjection } = deps;
+  const { formatMoney, codeBlock } = format;
   const { getStartingAssets, getRecurringMonthlyNet, getDebtRows } = finance;
   const { simulateDebtSeries } = debtProjection;
 
@@ -45,6 +45,10 @@ module.exports = function registerMoneyGraphHandler(bot, deps) {
       "- Starting assets include `assets:bank` and `assets:savings`.",
       "- Debt payoff uses avalanche logic with positive recurring surplus as extra payment."
     ].join("\n");
+  }
+
+  function formatSummaryRow(label, value, width = 18) {
+    return `${String(label).padEnd(width)} ${value}`;
   }
 
   bot.onText(/^\/money_graph(?:@\w+)?(?:\s+(.*))?$/i, async (msg, match) => {
@@ -195,11 +199,24 @@ module.exports = function registerMoneyGraphHandler(bot, deps) {
       const summary = [
         "💰 Money Graph",
         "",
-        `Now → Bank ${formatMoney(starting.bank)}, Savings ${formatMoney(starting.savings)}, Assets ${formatMoney(assetsNow)}, Debt ${formatMoney(debtNow)}, Net Worth ${formatMoney(netWorthNow)}`,
-        `${horizon}m → Assets ${formatMoney(assetEnd)}, Debt ${formatMoney(debtEnd)}, Net Worth ${formatMoney(netWorthEnd)}`
+        codeBlock([
+          formatSummaryRow("Horizon", `${horizon} month(s)`),
+          "",
+          formatSummaryRow("Bank Now", formatMoney(starting.bank)),
+          formatSummaryRow("Savings Now", formatMoney(starting.savings)),
+          formatSummaryRow("Assets Now", formatMoney(assetsNow)),
+          formatSummaryRow("Debt Now", formatMoney(debtNow)),
+          formatSummaryRow("Net Worth Now", formatMoney(netWorthNow)),
+          "",
+          formatSummaryRow(`${horizon}m Assets`, formatMoney(assetEnd)),
+          formatSummaryRow(`${horizon}m Debt`, formatMoney(debtEnd)),
+          formatSummaryRow(`${horizon}m Net Worth`, formatMoney(netWorthEnd))
+        ].join("\n"))
       ].join("\n");
 
-      return bot.sendMessage(chatId, summary);
+      return bot.sendMessage(chatId, summary, {
+        parse_mode: "Markdown"
+      });
     } catch (err) {
       console.error("money_graph error:", err);
       return bot.sendMessage(chatId, "Error generating money graph.");
