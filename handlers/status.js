@@ -1,6 +1,5 @@
-// handlers/status.js
 module.exports = function registerStatusHandler(bot, deps) {
-  const { db, ledgerService, format, finance } = deps;
+  const { db, ledgerService, format, finance, simulateCashflow } = deps;
   const { formatMoney, codeBlock, renderTable } = format;
   const { getDebtRows } = finance;
 
@@ -64,7 +63,7 @@ module.exports = function registerStatusHandler(bot, deps) {
   function renderHelp() {
     return [
       "*\\/status*",
-      "Show a compact financial status snapshot including current balance, recent income and expenses, recurring 30-day net, projected 30-day balance, and debt metrics.",
+      "Show a compact financial status snapshot including balances, net worth, lowest projected balance, recent income and expenses, recurring 30-day net, projected 30-day balance, and debt metrics.",
       "",
       "*Usage*",
       "- `/status`",
@@ -74,6 +73,7 @@ module.exports = function registerStatusHandler(bot, deps) {
       "",
       "*Notes*",
       "- Uses `ledgerService.getBalances()` for current balances.",
+      "- Uses `simulateCashflow` for 30-day lowest projected balance.",
       "- Expands recurring items across the next 30 days.",
       "- Shows up to 3 upcoming recurring events."
     ].join("\n");
@@ -113,6 +113,19 @@ module.exports = function registerStatusHandler(bot, deps) {
 
       const bankBalance = Number(bank?.balance) || 0;
       const savingsBalance = Number(savings?.balance) || 0;
+
+      const checking = db.prepare(`
+        SELECT id
+        FROM accounts
+        WHERE name = 'assets:bank'
+      `).get();
+
+      if (!checking) {
+        return bot.sendMessage(chatId, "Checking account not found.");
+      }
+
+      const sim = simulateCashflow(db, bankBalance, checking.id, 30);
+      const lowestAhead = Number(sim?.lowestBalance) || bankBalance;
 
       const rows = db.prepare(`
         SELECT
@@ -209,6 +222,7 @@ module.exports = function registerStatusHandler(bot, deps) {
           `Bank           ${formatMoney(bankBalance)}`,
           `Savings        ${formatMoney(savingsBalance)}`,
           `Net Worth      ${signedMoney(netWorth)}`,
+          `Lowest Ahead   ${formatMoney(lowestAhead)}`,
           `30d Income     ${formatMoney(income30)}`,
           `30d Expenses   ${formatMoney(expenses30)}`,
           `30d Net        ${signedMoney(net30)}`,
@@ -249,7 +263,7 @@ module.exports = function registerStatusHandler(bot, deps) {
 module.exports.help = {
   command: "status",
   category: "Reporting",
-  summary: "Show a compact financial status snapshot including current balance, recent income and expenses, recurring 30-day net, projected 30-day balance, and debt metrics.",
+  summary: "Show a compact financial status snapshot including balances, net worth, lowest projected balance, recent income and expenses, recurring 30-day net, projected 30-day balance, and debt metrics.",
   usage: [
     "/status"
   ],
@@ -258,6 +272,7 @@ module.exports.help = {
   ],
   notes: [
     "Uses `ledgerService.getBalances()` for current balances.",
+    "Uses `simulateCashflow` for 30-day lowest projected balance.",
     "Expands recurring items across the next 30 days.",
     "Shows up to 3 upcoming recurring events."
   ]

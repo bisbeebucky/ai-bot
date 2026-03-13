@@ -252,7 +252,7 @@ module.exports = function registerAutopilotHandler(bot, deps) {
         lines.push(
           "",
           `*Next commands*`,
-          nextCommands.join("  ")
+          nextCommands.map((cmd) => `• \`${cmd}\``).join("\n")
         );
       }
 
