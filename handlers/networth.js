@@ -1,12 +1,13 @@
 // handlers/networth.js
 module.exports = function registerNetworthHandler(bot, deps) {
-  const { ledgerService, format } = deps;
+  const { ledgerService, format, finance, db } = deps;
   const { formatMoney, codeBlock } = format;
+  const { getDebtRows } = finance;
 
   function renderHelp() {
     return [
       "*\\/networth*",
-      "Show assets minus liabilities.",
+      "Show assets minus liabilities, including tracked debts.",
       "",
       "*Usage*",
       "- `/networth`",
@@ -47,25 +48,36 @@ module.exports = function registerNetworthHandler(bot, deps) {
       const balances = ledgerService.getBalances();
 
       let assets = 0;
-      let liabilities = 0;
+      let ledgerLiabilities = 0;
 
       for (const b of balances) {
         const account = String(b.account || "");
         const amount = Number(b.balance) || 0;
 
-        if (account.startsWith("assets:")) assets += amount;
-        if (account.startsWith("liabilities:")) liabilities += Math.abs(amount);
+        if (account.startsWith("assets:")) {
+          assets += amount;
+        }
+
+        if (account.startsWith("liabilities:")) {
+          ledgerLiabilities += Math.abs(amount);
+        }
       }
 
+      const debtRows = getDebtRows(db);
+      const debtLiabilities = debtRows.reduce((sum, d) => {
+        return sum + (Number(d.balance) || 0);
+      }, 0);
+
+      const liabilities = ledgerLiabilities + debtLiabilities;
       const networth = assets - liabilities;
 
       const out = [
         "📦 *Net Worth*",
         "",
         codeBlock([
-          `Assets       ${formatMoney(assets)}`,
-          `Liabilities  ${formatMoney(liabilities)}`,
-          `Net Worth    ${networth >= 0 ? "+" : "-"}${formatMoney(Math.abs(networth))}`
+          `Assets         ${formatMoney(assets)}`,
+          `Liabilities    ${formatMoney(liabilities)}`,
+          `Net Worth      ${networth >= 0 ? "+" : "-"}${formatMoney(Math.abs(networth))}`
         ].join("\n"))
       ].join("\n");
 
@@ -82,7 +94,7 @@ module.exports = function registerNetworthHandler(bot, deps) {
 module.exports.help = {
   command: "networth",
   category: "Reporting",
-  summary: "Show assets minus liabilities.",
+  summary: "Show assets minus liabilities, including tracked debts.",
   usage: [
     "/networth"
   ],

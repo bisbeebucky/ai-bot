@@ -1,7 +1,8 @@
 // handlers/status.js
 module.exports = function registerStatusHandler(bot, deps) {
-  const { db, ledgerService, format } = deps;
+  const { db, ledgerService, format, finance } = deps;
   const { formatMoney, codeBlock, renderTable } = format;
+  const { getDebtRows } = finance;
 
   function parseYMD(s) {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || "").trim());
@@ -108,7 +109,10 @@ module.exports = function registerStatusHandler(bot, deps) {
     try {
       const balances = ledgerService.getBalances();
       const bank = balances.find((b) => b.account === "assets:bank");
+      const savings = balances.find((b) => b.account === "assets:savings");
+
       const bankBalance = Number(bank?.balance) || 0;
+      const savingsBalance = Number(savings?.balance) || 0;
 
       const rows = db.prepare(`
         SELECT
@@ -178,26 +182,33 @@ module.exports = function registerStatusHandler(bot, deps) {
 
       const projectedNet30 = bankBalance + recurringNet30;
 
-      const debtRow = db.prepare(`
-        SELECT
-          IFNULL(SUM(balance), 0) as totalDebt,
-          IFNULL(SUM(minimum), 0) as totalMinimums,
-          IFNULL(SUM(balance * apr), 0) as weightedNumerator
-        FROM debts
-      `).get();
+      const debtRows = getDebtRows(db);
 
-      const totalDebt = Number(debtRow?.totalDebt) || 0;
-      const totalMinimums = Number(debtRow?.totalMinimums) || 0;
+      const totalDebt = debtRows.reduce((sum, d) => {
+        return sum + (Number(d.balance) || 0);
+      }, 0);
+
+      const totalMinimums = debtRows.reduce((sum, d) => {
+        return sum + (Number(d.minimum) || 0);
+      }, 0);
+
+      const weightedNumerator = debtRows.reduce((sum, d) => {
+        return sum + ((Number(d.balance) || 0) * (Number(d.apr) || 0));
+      }, 0);
+
       const weightedApr =
-        totalDebt > 0
-          ? (Number(debtRow?.weightedNumerator) || 0) / totalDebt
-          : 0;
+        totalDebt > 0 ? weightedNumerator / totalDebt : 0;
+
+      const totalAssets = bankBalance + savingsBalance;
+      const netWorth = totalAssets - totalDebt;
 
       const lines = [
         "📊 *Status*",
         "",
         codeBlock([
-          `Balance        ${formatMoney(bankBalance)}`,
+          `Bank           ${formatMoney(bankBalance)}`,
+          `Savings        ${formatMoney(savingsBalance)}`,
+          `Net Worth      ${signedMoney(netWorth)}`,
           `30d Income     ${formatMoney(income30)}`,
           `30d Expenses   ${formatMoney(expenses30)}`,
           `30d Net        ${signedMoney(net30)}`,
