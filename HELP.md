@@ -127,13 +127,14 @@ Quick start:
 ---
 
 # Recurring Transactions
-
+e
 | Command | Description | Example |
 |-------|-------------|--------|
 | `/recurring` | Add recurring bill | `/recurring rent 1200 monthly 1` |
 | `/recurring_income` | Add recurring income | `/recurring_income salary 2500 monthly 1` |
 | `/recurring_list` | List recurring items | `/recurring_list` |
 | `/recurring_delete` | Delete recurring item | `/recurring_delete 3` |
+| `/recurring_shift` | Shift the next due date of a recurring item | `/recurring_shift <id> <YYYY-MM-DD>` |
 | `/runrecurring` | Run recurring transactions now | `/runrecurring` |
 
 ---
