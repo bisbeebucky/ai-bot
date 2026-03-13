@@ -80,7 +80,10 @@ module.exports = function registerBotstatusHandler(bot, deps) {
           `RSS          ${formatBytes(memory.rss)}`,
           `Heap Used    ${formatBytes(memory.heapUsed)}`,
           `Heap Total   ${formatBytes(memory.heapTotal)}`
-        ].join("\n"))
+        ].join("\n")),
+        "",
+        "Project: https://github.com/bisbeebucky/ai-bot",
+        "⭐ Star the repo if you find it useful"
       ].join("\n");
 
       return bot.sendMessage(chatId, out, {
