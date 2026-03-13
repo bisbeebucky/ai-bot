@@ -150,6 +150,7 @@ Quick start:
 | `/summary` | 30-day spending breakdown by category | `/summary` |
 | `/why` | Explain which upcoming expenses cause your lowest balance | `/why` |
 | `/risk` | Calculate a financial risk score based on cashflow, savings, and debt | `/risk` |
+| `/burn` | Uses recurring income and expenses to estimate burn | `/burn` |
 | `/budget` | Budget versus actual spending (30 days) | `/budget` |
 | `/budget_set` | Set a category budget | `/budget_set food 1000` |
 | `/budget_list` | List saved budgets | `/budget_list` |
