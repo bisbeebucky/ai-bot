@@ -153,6 +153,7 @@ module.exports = function registerUntilPaydayHandler(bot, deps) {
       }
 
       const lowestBeforePay = Number(result?.lowestBalance) || currentBalance;
+      const spendingBuffer = Math.max(0, lowestBeforePay);
 
       let statusLine;
       let summaryLine;
@@ -177,6 +178,7 @@ module.exports = function registerUntilPaydayHandler(bot, deps) {
         codeBlock([
           `Current Balance    ${formatMoney(currentBalance)}`,
           `Lowest Before Pay  ${formatMoney(lowestBeforePay)}`,
+          `Spending Buffer    ${formatMoney(spendingBuffer)}`,
           `Balance Pre-Pay    ${formatMoney(balanceBeforePayday)}`,
           `Next Income        ${formatMoney(nextIncome.amount)}`,
           `Income Source      ${nextIncome.description || "income"}`,
