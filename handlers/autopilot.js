@@ -97,7 +97,8 @@ module.exports = function registerAutopilotHandler(bot, deps) {
       "- `/autopilot`",
       "",
       "*Notes*",
-      "- Prioritizes cash defense first, then debt payoff, then emergency savings, then long-term growth."
+      "- Prioritizes cash defense first, then debt payoff, then emergency savings, then long-term growth.",
+      "- Explains why the recommendation was chosen and what to do next."
     ].join("\n");
   }
 
@@ -161,54 +162,75 @@ module.exports = function registerAutopilotHandler(bot, deps) {
       );
 
       let mode;
-      let reason;
-      let action;
-      let nextStep = "";
+      let confidence;
+      let headline;
+      let why;
+      let doNow;
+      let watchNext;
+      let nextCommands = [];
 
       if (lowest < 0) {
         mode = "Emergency Cash Defense";
-        reason = `Projected lowest balance is ${formatMoney(lowest)}.`;
-        action = "Pause extra debt payments and cut discretionary spending immediately.";
-        nextStep = "Use /danger and /untilpayday to manage the risk window.";
+        confidence = "High";
+        headline = "🧠 You need to protect cash immediately.";
+        why = `Your projected lowest balance is ${formatMoney(lowest)}, which means your current plan is likely to go negative before the next income arrives.`;
+        doNow = "Pause extra debt payments, cut discretionary spending, and keep as much cash as possible in checking.";
+        watchNext = "The danger window before your next income is the main risk. Focus on staying above zero until payday.";
+        nextCommands = ["/danger", "/untilpayday", "/caniafford"];
       } else if (lowest < 100) {
         mode = "Preserve Cash";
-        reason = `Projected lowest balance is only ${formatMoney(lowest)} before next income.`;
-        action = "Avoid extra spending until payday and keep cash in checking.";
-        nextStep = "Recheck /untilpayday after the next income lands.";
+        confidence = "Medium";
+        headline = "🧠 You are okay, but your cash buffer is thin.";
+        why = `Your forecast stays positive, but the projected lowest balance is only ${formatMoney(lowest)} before the next income.`;
+        doNow = "Avoid extra discretionary spending and keep cash in checking until your next income lands.";
+        watchNext = "A small unexpected expense could turn this into a risk window. Recheck after the next paycheck.";
+        nextCommands = ["/untilpayday", "/danger", "/caniafford"];
       } else if (debtTotal > 0 && monthlyNet > 0) {
         mode = "Attack Debt";
-        reason = `You have ${formatMoney(debtTotal)} in debt and positive recurring cashflow.`;
+        confidence = recommendedExtra ? "High" : "Medium";
 
         if (targetDebt && recommendedExtra) {
-          action =
-            `Target: ${targetDebt.name} (${targetDebt.apr}% APR)\n` +
-            `Recommended extra payment: ${formatMoney(recommendedExtra)} per month.`;
+          headline = "🧠 Your cashflow is strong enough to make real progress on debt.";
+          why = `You have ${formatMoney(debtTotal)} in debt, positive recurring cashflow, and enough short-term buffer to safely accelerate payoff. The best current target is ${targetDebt.name} at ${targetDebt.apr}% APR.`;
+          doNow = `Direct extra money toward ${targetDebt.name}. A good next step is about ${formatMoney(recommendedExtra)} per month in additional payment.`;
         } else if (targetDebt) {
-          action =
-            `Target: ${targetDebt.name} (${targetDebt.apr}% APR)\n` +
-            `Direct available surplus toward this debt.`;
+          headline = "🧠 You can safely focus on debt reduction right now.";
+          why = `You have ${formatMoney(debtTotal)} in debt and positive recurring cashflow. Your highest-priority target is ${targetDebt.name} at ${targetDebt.apr}% APR.`;
+          doNow = `Direct available surplus toward ${targetDebt.name} and keep monitoring your short-term cash buffer.`;
         } else {
-          action = "Direct available surplus toward highest APR debt.";
+          headline = "🧠 You can safely focus on debt reduction right now.";
+          why = `You have debt and positive recurring cashflow, and your short-term forecast is stable enough to support extra payoff.`;
+          doNow = "Direct available surplus toward your highest APR debt.";
         }
 
-        nextStep = "Use /best_extra and /debt_compare_range_graph for fine tuning.";
+        watchNext = "Keep an eye on your 30-day minimum balance. If your buffer starts shrinking, reduce the extra payment temporarily.";
+        nextCommands = ["/best_extra", "/debt_compare_range_graph", "/forecast_graph"];
       } else if (savings < 1000) {
         mode = "Build Emergency Fund";
-        reason = `Savings are only ${formatMoney(savings)}.`;
-        action = "Build a starter emergency fund before making aggressive long-term moves.";
-        nextStep = "Use /emergency_fund to track your target.";
+        confidence = "Medium";
+        headline = "🧠 Build a little more safety before getting aggressive.";
+        why = `Your short-term risk is controlled, but savings are only ${formatMoney(savings)}, which is still a thin emergency buffer.`;
+        doNow = "Build your starter emergency fund before making aggressive long-term moves.";
+        watchNext = "The main thing to watch is whether you can keep savings growing without creating new checking stress.";
+        nextCommands = ["/emergency_fund", "/status", "/forecast_graph"];
       } else {
         mode = "Grow Wealth";
-        reason = "Cashflow is positive, your near-term risk is controlled, and debt pressure is low.";
-        action = "Keep investing or saving your monthly surplus toward long-term goals.";
-        nextStep = "Use /rich and /future to monitor long-term trajectory.";
+        confidence = "Medium";
+        headline = "🧠 Your near-term picture looks stable enough to think beyond survival mode.";
+        why = "Cashflow is positive, short-term risk is controlled, and debt pressure appears low enough to shift attention toward longer-term growth.";
+        doNow = "Keep saving or investing your monthly surplus toward long-term goals.";
+        watchNext = "Monitor whether your monthly net stays positive and whether your short-term forecast remains stable.";
+        nextCommands = ["/rich", "/future_graph", "/forecast_graph"];
       }
 
       const lines = [
         "🤖 *Autopilot*",
         "",
+        headline,
+        "",
         codeBlock([
           `Mode         ${mode}`,
+          `Confidence   ${confidence}`,
           `Bank         ${formatMoney(bank)}`,
           `Savings      ${formatMoney(savings)}`,
           `Debt         ${formatMoney(debtTotal)}`,
@@ -216,13 +238,29 @@ module.exports = function registerAutopilotHandler(bot, deps) {
           `Lowest Ahead ${formatMoney(lowest)}`,
           ...(recommendedExtra ? [`Best Extra   ${formatMoney(recommendedExtra)}`] : [])
         ].join("\n")),
-        `Reason: ${reason}`,
-        `Action: ${action}`
+        `*Why*`,
+        why,
+        "",
+        `*Do now*`,
+        doNow,
+        "",
+        `*Watch next*`,
+        watchNext
       ];
 
-      if (nextStep) {
-        lines.push(nextStep);
+      if (nextCommands.length) {
+        lines.push(
+          "",
+          `*Next commands*`,
+          nextCommands.join("  ")
+        );
       }
+
+      lines.push(
+        "",
+        `*Next review*`,
+        "Re-run `/autopilot` after your next income lands or if your balance changes."
+      );
 
       return bot.sendMessage(chatId, lines.join("\n"), {
         parse_mode: "Markdown"
@@ -245,6 +283,7 @@ module.exports.help = {
     "/autopilot"
   ],
   notes: [
-    "Prioritizes cash defense first, then debt payoff, then emergency savings, then long-term growth."
+    "Prioritizes cash defense first, then debt payoff, then emergency savings, then long-term growth.",
+    "Explains why the recommendation was chosen and what to do next."
   ]
 };
