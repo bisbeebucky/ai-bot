@@ -127,6 +127,22 @@ module.exports = function registerUntilPaydayHandler(bot, deps) {
       const result = simulateCashflow(db, currentBalance, checking.id, days);
       const timeline = Array.isArray(result?.timeline) ? result.timeline : [];
 
+      let largestExpense = null;
+
+      for (const event of timeline) {
+        const amt = Number(event.amount) || 0;
+        const eventDate = parseLocalDate(event.date);
+
+        if (eventDate && eventDate < nextIncome.date && amt < 0) {
+          if (!largestExpense || Math.abs(amt) > Math.abs(largestExpense.amount)) {
+            largestExpense = {
+              description: event.description || "expense",
+              amount: amt
+            };
+          }
+        }
+      }
+
       let balanceBeforePayday = currentBalance;
 
       for (const event of timeline) {
@@ -165,7 +181,14 @@ module.exports = function registerUntilPaydayHandler(bot, deps) {
           `Next Income        ${formatMoney(nextIncome.amount)}`,
           `Income Source      ${nextIncome.description || "income"}`,
           `Payday             ${nextIncome.next_due_date}`,
-          `Days Remaining     ${days}`
+          `Days Remaining     ${days}`,
+          ...(largestExpense
+            ? [
+              `Largest Expense   ${largestExpense.description} ${formatMoney(
+                Math.abs(largestExpense.amount)
+              )}`
+            ]
+            : [])
         ].join("\n"))
       ].join("\n");
 
