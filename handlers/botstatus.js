@@ -3,6 +3,8 @@ module.exports = function registerBotstatusHandler(bot, deps) {
   const { format } = deps;
   const { codeBlock } = format;
 
+  const VERSION = "v1.1.0";
+
   function formatBytes(bytes) {
     const n = Number(bytes) || 0;
     if (n < 1024) return `${n} B`;
@@ -25,7 +27,7 @@ module.exports = function registerBotstatusHandler(bot, deps) {
   function renderHelp() {
     return [
       "*\\/botstatus*",
-      "Show local bot runtime status, including process ID, Node version, platform, uptime, and memory usage.",
+      "Show local bot runtime status, including version, process ID, Node version, platform, uptime, and memory usage.",
       "",
       "*Usage*",
       "- `/botstatus`",
@@ -73,6 +75,7 @@ module.exports = function registerBotstatusHandler(bot, deps) {
         "🤖 *Bot Status*",
         "",
         codeBlock([
+          `Version      ${VERSION}`,
           `PID          ${process.pid}`,
           `Node         ${process.version}`,
           `Platform     ${process.platform}`,
@@ -99,7 +102,7 @@ module.exports = function registerBotstatusHandler(bot, deps) {
 module.exports.help = {
   command: "botstatus",
   category: "Runtime",
-  summary: "Show local bot runtime status, including process ID, Node version, platform, uptime, and memory usage.",
+  summary: "Show local bot runtime status, including version, process ID, Node version, platform, uptime, and memory usage.",
   usage: [
     "/botstatus"
   ],
