@@ -101,10 +101,9 @@ module.exports = function registerWhyHandler(bot, deps) {
 
       const top = causes.slice(0, 5);
 
-      const lines = top.map(c =>
-        `${c.description.padEnd(12)} ${formatMoney(c.amount)}`
+      const lines = top.map((c, i) =>
+        `${String(i + 1).padEnd(2)} ${c.description.padEnd(12)} ${formatMoney(c.amount)}`
       );
-
       const out = [
         "🧠 *Why Your Balance Drops*",
         "",
