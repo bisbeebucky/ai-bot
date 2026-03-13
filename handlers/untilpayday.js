@@ -136,12 +136,31 @@ module.exports = function registerUntilPaydayHandler(bot, deps) {
         }
       }
 
+      const lowestBeforePay = Number(result?.lowestBalance) || currentBalance;
+
+      let statusLine;
+      let summaryLine;
+
+      if (lowestBeforePay < 0) {
+        statusLine = "🔴 *Status: Danger*";
+        summaryLine = "You are likely to go negative before payday unless something changes.";
+      } else if (lowestBeforePay < 100) {
+        statusLine = "🟡 *Status: Tight*";
+        summaryLine = "You stay positive, but your safety margin is thin.";
+      } else {
+        statusLine = "🟢 *Status: Safe*";
+        summaryLine = "Your forecast looks stable through payday.";
+      }
+
       const out = [
         "💵 *Until Payday*",
         "",
+        statusLine,
+        summaryLine,
+        "",
         codeBlock([
           `Current Balance    ${formatMoney(currentBalance)}`,
-          `Lowest Before Pay  ${formatMoney(Number(result?.lowestBalance) || currentBalance)}`,
+          `Lowest Before Pay  ${formatMoney(lowestBeforePay)}`,
           `Balance Pre-Pay    ${formatMoney(balanceBeforePayday)}`,
           `Next Income        ${formatMoney(nextIncome.amount)}`,
           `Income Source      ${nextIncome.description || "income"}`,
