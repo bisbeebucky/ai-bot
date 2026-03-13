@@ -2,6 +2,8 @@
 module.exports = function registerBotstatusHandler(bot, deps) {
   const { format } = deps;
   const { codeBlock } = format;
+  const fs = require("fs");
+  const path = require("path");
 
   const VERSION = "v1.1.0";
 
@@ -70,6 +72,10 @@ module.exports = function registerBotstatusHandler(bot, deps) {
 
     try {
       const memory = process.memoryUsage();
+      const handlerDir = path.join(__dirname);
+      const commandCount = fs.readdirSync(handlerDir)
+        .filter(f => f.endsWith(".js"))
+        .length;
 
       const out = [
         "🤖 *Bot Status*",
@@ -77,6 +83,7 @@ module.exports = function registerBotstatusHandler(bot, deps) {
         codeBlock([
           `Version      ${VERSION}`,
           `PID          ${process.pid}`,
+          `Commands     ${commandCount}`,
           `Node         ${process.version}`,
           `Platform     ${process.platform}`,
           `Uptime       ${formatUptime(process.uptime())}`,
