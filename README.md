@@ -200,3 +200,28 @@ Status:          ⚠️ Tight
 <p>
 The bot warns you <strong>before an overdraft occurs</strong>.
 </p>
+
+<hr>
+
+<h2>Release Notes</h2>
+
+<p>
+Recent improvements include better debt listing, recurring item management,
+confirmation buttons for destructive actions, bank/savings transfers, and
+cleaner graph output formatting.
+</p>
+
+<p>
+See the changelog for version history and release details.
+</p>
+
+<hr>
+
+<p align="center">
+⭐ If this project helps you manage your finances or avoid overdrafts, consider giving it a star.
+</p>
+
+<p align="center">
+  <a href="HELP.md"><strong>📖 Commands</strong></a> •
+  <a href="https://github.com/bisbeebucky/ai-bot"><strong>⭐ Star the repo</strong></a>
+</p>
