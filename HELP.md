@@ -175,10 +175,8 @@ These commands answer the most common financial questions quickly.
 
 | Command | Description | Example |
 |-------|-------------|--------|
-| `/retirement` | Retirement target projection | `/retirement 500 7 1000000` |
+| `/retirement` | Retirement target projection; use `fi` for financial independence mode | `/retirement 500 7 1000000` |
 | `/retirement_auto` | Retirement projection using recurring surplus | `/retirement_auto 7 1000000` |
-| `/retirement_fi` | Financial Independence projection using the 4% rule | `/retirement_fi 7` |
-
 ---
 
 # Runtime / Admin

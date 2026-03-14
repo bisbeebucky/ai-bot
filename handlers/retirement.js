@@ -37,6 +37,19 @@ module.exports = function registerRetirementHandler(bot, deps) {
     return `${month} ${year}`;
   }
 
+  function getActualMonthlyExpenses() {
+    const row = db.prepare(`
+      SELECT SUM(p.amount) as total
+      FROM transactions t
+      JOIN postings p ON p.transaction_id = t.id
+      JOIN accounts a ON a.id = p.account_id
+      WHERE strftime('%Y-%m', t.date) = strftime('%Y-%m', 'now')
+        AND a.type = 'EXPENSES'
+    `).get();
+
+    return Math.abs(Number(row?.total) || 0);
+  }
+
   function sendMarkdown(chatId, text) {
     return bot.sendMessage(chatId, text, { parse_mode: "Markdown" });
   }
@@ -52,6 +65,7 @@ module.exports = function registerRetirementHandler(bot, deps) {
       "",
       "*Usage*",
       "- `/retirement <monthlySave> <annualReturn> <target>`",
+      "- `/retirement fi <annualReturn>`",
       "",
       "*Arguments*",
       "- `<monthlySave>` — Monthly investment amount. Must be greater than 0.",
@@ -61,10 +75,12 @@ module.exports = function registerRetirementHandler(bot, deps) {
       "*Examples*",
       "- `/retirement 500 7 500000`",
       "- `/retirement 1200 8 1000000`",
+      "- `/retirement fi 7`",
       "",
       "*Notes*",
       "- Starting balance includes `assets:bank` and `assets:savings`.",
-      "- Projection uses monthly compounding."
+      "- Projection uses monthly compounding.",
+      "- `fi` mode estimates financial independence using 25x annual spending."
     ].join("\n");
   }
 
@@ -90,6 +106,28 @@ module.exports = function registerRetirementHandler(bot, deps) {
     ].join("\n");
   }
 
+  function renderRetirementFiHelp() {
+    return [
+      "*\\/retirement fi*",
+      "Estimate time to financial independence using your current assets, recurring monthly surplus, and this month's actual expenses.",
+      "",
+      "*Usage*",
+      "- `/retirement fi <annual_return_percent>`",
+      "",
+      "*Arguments*",
+      "- `<annual_return_percent>` — Expected annual return percentage, such as `7`.",
+      "",
+      "*Examples*",
+      "- `/retirement fi 7`",
+      "- `/retirement fi 8.5`",
+      "",
+      "*Notes*",
+      "- Starting assets include `assets:bank` and `assets:savings`.",
+      "- FI target uses 25x annual spending.",
+      "- Monthly expenses come from the current month's posted expense transactions."
+    ].join("\n");
+  }
+
   bot.onText(/^\/retirement(?:@\w+)?(?:\s+(.*))?$/i, (msg, match) => {
     const chatId = msg.chat.id;
     const raw = String(match?.[1] || "").trim();
@@ -99,6 +137,111 @@ module.exports = function registerRetirementHandler(bot, deps) {
     }
 
     try {
+      const fiMatch = raw.match(/^fi\s+(-?\d+(?:\.\d+)?)$/i);
+
+      if (fiMatch) {
+        const annualReturn = Number(fiMatch[1]);
+
+        if (!Number.isFinite(annualReturn) || annualReturn < 0) {
+          return sendMarkdown(
+            chatId,
+            [
+              "Annual return must be zero or greater.",
+              "",
+              "Usage:",
+              "`/retirement fi <annual_return_percent>`",
+              "",
+              "Example:",
+              "`/retirement fi 7`"
+            ].join("\n")
+          );
+        }
+
+        const starting = getStartingAssets(ledgerService);
+        const startingBalance = starting.total;
+        const recurring = getRecurringMonthlyNet(db);
+        const monthlySave = recurring.net;
+        const monthlyExpenses = getActualMonthlyExpenses();
+
+        if (monthlyExpenses <= 0) {
+          return sendMarkdown(
+            chatId,
+            "This month's expenses are zero or unavailable, so the FI target cannot be calculated yet."
+          );
+        }
+
+        if (monthlySave <= 0) {
+          return sendMarkdown(
+            chatId,
+            "Recurring surplus is not positive, so the FI projection cannot be calculated."
+          );
+        }
+
+        const annualExpenses = monthlyExpenses * 12;
+        const fiTarget = annualExpenses * 25;
+        const monthlyRate = annualReturn / 100 / 12;
+
+        if (startingBalance >= fiTarget) {
+          return sendMarkdown(
+            chatId,
+            [
+              "🔥 *Financial Independence*",
+              "",
+              codeBlock([
+                `Bank Balance      ${formatMoney(starting.bank)}`,
+                `Savings Balance   ${formatMoney(starting.savings)}`,
+                `Starting Assets   ${formatMoney(startingBalance)}`,
+                `Annual Spending   ${formatMoney(annualExpenses)}`,
+                `FI Target         ${formatMoney(fiTarget)}`,
+                `Status            Already FI`
+              ].join("\n"))
+            ].join("\n")
+          );
+        }
+
+        let balance = startingBalance;
+        let months = 0;
+
+        while (balance < fiTarget && months < 1200) {
+          balance = balance * (1 + monthlyRate) + monthlySave;
+          months += 1;
+        }
+
+        if (months >= 1200) {
+          return bot.sendMessage(
+            chatId,
+            "Projection exceeded 100 years. Increase recurring surplus, return assumption, or reduce expenses."
+          );
+        }
+
+        const ym = yearsMonths(months);
+        const fiDate = targetDate(months);
+
+        return sendMarkdown(
+          chatId,
+          [
+            "🔥 *Financial Independence*",
+            "",
+            codeBlock([
+              `Bank Balance      ${formatMoney(starting.bank)}`,
+              `Savings Balance   ${formatMoney(starting.savings)}`,
+              `Starting Assets   ${formatMoney(startingBalance)}`,
+              `Monthly Surplus   ${formatMoney(monthlySave)}`,
+              `Monthly Expenses  ${formatMoney(monthlyExpenses)}`,
+              `Annual Spending   ${formatMoney(annualExpenses)}`,
+              `FI Target         ${formatMoney(fiTarget)}`,
+              `Annual Return     ${annualReturn.toFixed(2)}%`,
+              `Time to FI        ${ym.years}y ${ym.months}m`,
+              `FI Date           ${fiDate}`
+            ].join("\n"))
+          ].join("\n")
+        );
+      }
+
+      if (/^fi$/i.test(raw)) {
+        return sendMarkdown(chatId, renderRetirementFiHelp());
+      }
+
       const parsed = raw.match(/^(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)$/);
 
       if (!parsed) {
@@ -109,9 +252,11 @@ module.exports = function registerRetirementHandler(bot, deps) {
             "",
             "Usage:",
             "`/retirement <monthlySave> <annualReturn> <target>`",
+            "`/retirement fi <annual_return_percent>`",
             "",
-            "Example:",
-            "`/retirement 500 7 500000`"
+            "Examples:",
+            "`/retirement 500 7 500000`",
+            "`/retirement fi 7`"
           ].join("\n")
         );
       }
@@ -330,7 +475,8 @@ module.exports.helpEntries = [
     category: "Forecasting",
     summary: "Project how long it will take to reach an investment target using a manual monthly contribution.",
     usage: [
-      "/retirement <monthlySave> <annualReturn> <target>"
+      "/retirement <monthlySave> <annualReturn> <target>",
+      "/retirement fi <annual_return_percent>"
     ],
     args: [
       { name: "<monthlySave>", description: "Monthly investment amount. Must be greater than 0." },
@@ -339,11 +485,13 @@ module.exports.helpEntries = [
     ],
     examples: [
       "/retirement 500 7 500000",
-      "/retirement 1200 8 1000000"
+      "/retirement 1200 8 1000000",
+      "/retirement fi 7"
     ],
     notes: [
       "Starting balance includes `assets:bank` and `assets:savings`.",
-      "Projection uses monthly compounding."
+      "Projection uses monthly compounding.",
+      "`fi` mode estimates financial independence using 25x annual spending."
     ]
   },
   {
