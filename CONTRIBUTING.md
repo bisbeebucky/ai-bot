@@ -1,6 +1,6 @@
-# Contributing
+! Contributing
 
-Contributions, ideas, and feedback are welcome.
+#Contributions, ideas, and feedback are welcome.
 
 Ways to contribute:
 
