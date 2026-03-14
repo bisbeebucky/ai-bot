@@ -133,9 +133,7 @@ These commands answer the most common financial questions quickly.
 |-------|-------------|--------|
 | `/monthly` | This month's income, expenses, and net | `/monthly` |
 | `/monthly_detail` | Income vs expense breakdown | `/monthly_detail` |
-| `/burnrate` | Monthly spending vs income and runway | `/burnrate` |
-| `/cashflow` | Recurring monthly income vs bills | `/cashflow` |
-| `/cashflow_detail` | Recurring cashflow breakdown | `/cashflow_detail` |
+| `/cashflow` | Recurring monthly income vs bills; use `detail` for line items | `/cashflow detail` |
 | `/summary` | 30-day spending breakdown by category | `/summary` |
 | `/why` | Explain which upcoming expenses cause your lowest balance | `/why` |
 | `/risk` | Calculate a financial risk score based on cashflow, savings, and debt | `/risk` |

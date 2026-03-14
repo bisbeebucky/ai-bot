@@ -6,7 +6,7 @@ module.exports = function registerSummaryHandler(bot, deps) {
   function renderHelp() {
     return [
       "*\\/summary*",
-      "30-day spending breakdown by category.",
+      "Show where your last 30 days of spending went by category.",
       "",
       "*Usage*",
       "- `/summary`",
@@ -95,8 +95,8 @@ module.exports = function registerSummaryHandler(bot, deps) {
 
 module.exports.help = {
   command: "summary",
-  category: "General",
-  summary: "30-day spending breakdown by category.",
+  category: "Spending",
+  summary: "Show where your last 30 days of spending went by category.",
   usage: [
     "/summary"
   ],
