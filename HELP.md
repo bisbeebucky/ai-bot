@@ -5,6 +5,8 @@ and retirement projections via Telegram. It uses OpenClaw as a gateway.
 
 This bot also supports both command input and natural language using AI.
 
+`/help` shows the core cockpit commands first, then the full paged index.
+
 ---
 
 Examples:

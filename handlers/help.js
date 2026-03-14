@@ -3,6 +3,14 @@ module.exports = function registerHelpHandler(bot, deps) {
   const { commandRegistry } = deps;
 
   const PAGE_SIZE = 13;
+  const CORE_COMMANDS = [
+    "status",
+    "untilpayday",
+    "why",
+    "focus",
+    "autopilot",
+    "forecast_graph"
+  ];
 
   function normalizeLookup(value) {
     return String(value || "")
@@ -59,6 +67,15 @@ module.exports = function registerHelpHandler(bot, deps) {
       `Commands: ${entries.length}`,
       `Pages: ${pages.length}`,
       "",
+      "Core commands"
+    ];
+
+    for (const command of CORE_COMMANDS) {
+      lines.push(`/${command}`);
+    }
+
+    lines.push(
+      "",
       "Use /help <page>",
       "Examples: /help 1, /help 2",
       "",
@@ -66,7 +83,7 @@ module.exports = function registerHelpHandler(bot, deps) {
       "You can also use /<command> help.",
       "",
       "Pages"
-    ];
+    );
 
     for (let i = 0; i < pages.length; i += 1) {
       const pageNo = i + 1;
@@ -143,6 +160,11 @@ module.exports = function registerHelpHandler(bot, deps) {
 
       if (/^\d+$/.test(raw)) {
         const pageNumber = Number(raw);
+
+        if (pageNumber === 0) {
+          return bot.sendMessage(chatId, renderOverviewIndex(entries));
+        }
+
         return bot.sendMessage(chatId, renderHelpPage(entries, pageNumber));
       }
 
@@ -169,21 +191,24 @@ module.exports.help = {
   summary: "Show help pages or detailed help for one command.",
   usage: [
     "/help",
+    "/help 0",
     "/help <page>",
     "/help <command>"
   ],
   args: [
-    { name: "<page>", description: "Optional help page number, such as 1 or 2." },
+    { name: "<page>", description: "Optional help page number, such as 1 or 2. Use 0 for the overview." },
     { name: "<command>", description: "Optional command name, such as add or recurring_delete." }
   ],
   examples: [
     "/help",
+    "/help 0",
     "/help 1",
     "/help 2",
     "/help add",
     "/help budget_set"
   ],
   notes: [
+    "The overview page highlights the core cockpit commands.",
     "You can also use /<command> help."
   ]
 };
