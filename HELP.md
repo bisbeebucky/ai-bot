@@ -40,7 +40,6 @@ These commands answer the most common financial questions quickly.
 | What will my balance look like soon? | `/forecast_graph` |
 | How much will I have after bills? | `/endmonth` |
 | How tight will things get before payday? | `/untilpayday` |
-| When is my lowest balance coming? | `/danger` |
 | Can I afford this purchase? | `/caniafford 150` |
 | What are my upcoming bills? | `/upcoming bill` |
 | What is my overall financial health? | `/financial_health` |
@@ -64,7 +63,7 @@ These commands answer the most common financial questions quickly.
 | `/undo` | Remove last transaction | `/undo` |
 | `/status` | Financial dashboard summary | `/status` |
 | `/money` | Financial snapshot | `/money` |
-| `/financial_health` | Financial scorecard | `/financial_health` |
+| `/financial_health` | Financial scorecard with health label, drag, and focus | `/financial_health` |
 | `/transfer` | move money between `bank` and `savings` | `/transfer 89 savings bank` |
 
 ---
@@ -103,7 +102,6 @@ These commands answer the most common financial questions quickly.
 | `/forecast_graph` | 30-day balance projection chart | `/forecast_graph` |
 | `/endmonth` | Project balance after the next 30 days of recurring income and bills | `/endmonth` |
 | `/untilpayday` | Shows the lowest balance before the next income arrives | `/untilpayday` |
-| `/danger` | Shows the date and event where your balance is lowest | `/danger` |
 | `/whatif` | Simulate balance with a hypothetical spend | `/whatif 50` |
 | `/upcoming` | Show upcoming recurring events | `/upcoming bill 60 25` |
 | `/year_projection` | 12-month projection using recurring cashflow | `/year_projection` |

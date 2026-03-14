@@ -176,7 +176,7 @@ module.exports = function registerAutopilotHandler(bot, deps) {
         why = `Your projected lowest balance is ${formatMoney(lowest)}, which means your current plan is likely to go negative before the next income arrives.`;
         doNow = "Pause extra debt payments, cut discretionary spending, and keep as much cash as possible in checking.";
         watchNext = "The danger window before your next income is the main risk. Focus on staying above zero until payday.";
-        nextCommands = ["/danger", "/untilpayday", "/caniafford"];
+        nextCommands = ["/untilpayday", "why", "/caniafford"];
       } else if (lowest < 100) {
         mode = "Preserve Cash";
         confidence = "Medium";
@@ -184,7 +184,8 @@ module.exports = function registerAutopilotHandler(bot, deps) {
         why = `Your forecast stays positive, but the projected lowest balance is only ${formatMoney(lowest)} before the next income.`;
         doNow = "Avoid extra discretionary spending and keep cash in checking until your next income lands.";
         watchNext = "A small unexpected expense could turn this into a risk window. Recheck after the next paycheck.";
-        nextCommands = ["/untilpayday", "/danger", "/caniafford"];
+        nextCommands = ["/untilpayday", "why", "/caniafford"];
+
       } else if (debtTotal > 0 && monthlyNet > 0) {
         mode = "Attack Debt";
         confidence = recommendedExtra ? "High" : "Medium";
