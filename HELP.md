@@ -24,10 +24,8 @@ Quick start:
 /money
 /status
 /focus
-/forecastgraph
-/future
+/forecast_graph
 /milestones
-/next
 /rich
 
 ---
@@ -39,7 +37,7 @@ These commands answer the most common financial questions quickly.
 | Question | Command |
 |--------|--------|
 | How much money do I have right now? | `/money` |
-| What will my balance look like soon? | `/forecastgraph` |
+| What will my balance look like soon? | `/forecast_graph` |
 | How much will I have after bills? | `/endmonth` |
 | How tight will things get before payday? | `/untilpayday` |
 | When is my lowest balance coming? | `/danger` |
@@ -47,15 +45,6 @@ These commands answer the most common financial questions quickly.
 | What are my upcoming bills? | `/upcoming bill` |
 | What is my overall financial health? | `/financial_health` |
 | What does my long-term wealth path look like? | `/rich` |
-
-Quick start:
-
-/money  
-/status  
-/forecastgraph  
-/future  
-/milestones  
-/rich
 
 ---
 
@@ -76,7 +65,7 @@ Quick start:
 | `/status` | Financial dashboard summary | `/status` |
 | `/money` | Financial snapshot | `/money` |
 | `/financial_health` | Financial scorecard | `/financial_health` |
-| `/transfer` | move money between `bank` and `savings` | (example: `/transfer 89 savings bank)` |
+| `/transfer` | move money between `bank` and `savings` | `/transfer 89 savings bank` |
 
 ---
 
@@ -91,7 +80,6 @@ Quick start:
 | `/rich` | Long-term wealth timeline ($50k → $1M) | `/rich` |
 | `/dashboard` | Full financial snapshot | `/dashboard` |
 | `/today` | Daily money snapshot | `/today` |
-| `/next` | Single recommended financial action right now | `/next` |
 | `/timeline` | Full money roadmap from now to major milestones | `/timeline` |
 
 ---
@@ -127,7 +115,7 @@ Quick start:
 ---
 
 # Recurring Transactions
-e
+
 | Command | Description | Example |
 |-------|-------------|--------|
 | `/recurring` | Add recurring bill | `/recurring rent 1200 monthly 1` |
