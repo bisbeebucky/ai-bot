@@ -77,7 +77,6 @@ These commands answer the most common financial questions quickly.
 | `/milestones` | Key financial milestones | `/milestones` |
 | `/milestones_graph` | Visual timeline of milestones | `/milestones_graph` |
 | `/rich` | Long-term wealth timeline ($50k → $1M) | `/rich` |
-| `/today` | Daily money snapshot | `/today` |
 | `/timeline` | Full money roadmap from now to major milestones | `/timeline` |
 
 ---
