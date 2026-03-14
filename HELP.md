@@ -108,6 +108,7 @@ These commands answer the most common financial questions quickly.
 | `/dashboard_graph` | Visual dashboard of bank, debt and net worth | `/dashboard_graph 60` |
 | `/life_projection` | Long-term projection with debt-free and FI estimates | `/life_projection` |
 | `/runway` | Cashflow runway based on recent income, expenses, and recurring net | `/runway` |
+| `/why` | Explain which upcoming expenses drive your lowest projected balance | `/why` |
 
 ---
 
@@ -131,7 +132,6 @@ These commands answer the most common financial questions quickly.
 | `/monthly` | This month's income, expenses, and net; use detail for breakdown | `/monthly detail` |
 | `/cashflow` | Recurring monthly income vs bills; use `detail` for line items | `/cashflow detail` |
 | `/summary` | 30-day spending breakdown by category | `/summary` |
-| `/why` | Explain which upcoming expenses cause your lowest balance | `/why` |
 | `/risk` | Calculate a financial risk score based on cashflow, savings, and debt | `/risk` |
 | `/burn` | Uses recurring income and expenses to estimate burn | `/burn` |
 | `/budget` | Budget versus actual spending (30 days) | `/budget` |

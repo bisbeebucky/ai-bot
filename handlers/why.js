@@ -38,6 +38,17 @@ module.exports = function registerWhyHandler(bot, deps) {
       if (/^(help|--help|-h)$/i.test(raw)) {
         return sendHelp(chatId);
       }
+
+      return bot.sendMessage(
+        chatId,
+        [
+          "The `/why` command does not take arguments.",
+          "",
+          "Usage:",
+          "`/why`"
+        ].join("\n"),
+        { parse_mode: "Markdown" }
+      );
     }
 
     try {
