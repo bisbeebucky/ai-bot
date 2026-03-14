@@ -67,6 +67,7 @@ These commands answer the most common financial questions quickly.
 | `/status` | Compact financial status snapshot | `/status` |
 | `/money` | Financial snapshot | `/money` |
 | `/transfer` | Move money between `bank` and `savings` | `/transfer 89 savings bank` |
+| `/reconcile` | Reconcile `bank` or `savings` to a real balance by posting an adjustment entry | `/reconcile bank 1234.56` |
 
 ---
 

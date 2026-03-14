@@ -2,6 +2,7 @@
 const createLedgerService = require("../services/ledgerService");
 const createFinanceEngine = require("../services/financeEngine");
 const createRecurringProcessor = require("../services/recurringProcessor");
+const createReconciliationService = require("../services/reconciliationService");
 
 const reportService = require("../services/reportService");
 const recurringService = require("../services/recurringService");
@@ -18,6 +19,7 @@ module.exports = function createDeps(db, openai) {
   const ledgerService = createLedgerService(db);
   const financeEngine = createFinanceEngine(ledgerService);
   const recurringProcessor = createRecurringProcessor(db, ledgerService);
+  const reconciliationService = createReconciliationService({ ledgerService });
 
   const deps = {
     db,
@@ -28,6 +30,7 @@ module.exports = function createDeps(db, openai) {
     reportService,
     recurringService,
     recurringProcessor,
+    reconciliationService,
 
     simulateCashflow,
 
