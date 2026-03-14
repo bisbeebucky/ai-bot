@@ -23,10 +23,11 @@ Quick start:
 
 /money
 /status
+/untilpayday
+/why
 /focus
+/autopilot
 /forecast_graph
-/milestones
-/rich
 
 ---
 
@@ -37,13 +38,13 @@ These commands answer the most common financial questions quickly.
 | Question | Command |
 |--------|--------|
 | How much money do I have right now? | `/money` |
-| What will my balance look like soon? | `/forecast_graph` |
-| How much will I have after bills? | `/endmonth` |
+| What is my overall financial picture right now? | `/status` |
 | How tight will things get before payday? | `/untilpayday` |
+| Why does my balance dip? | `/why` |
+| What should I focus on right now? | `/focus` |
+| What does the bot recommend I do next? | `/autopilot` |
 | Can I afford this purchase? | `/caniafford 150` |
-| What are my upcoming bills? | `/upcoming bill` |
-| What is my overall financial health? | `/financial_health` |
-| What does my long-term wealth path look like? | `/rich` |
+| What will my balance look like soon? | `/forecast_graph` |
 
 ---
 
@@ -61,10 +62,9 @@ These commands answer the most common financial questions quickly.
 | `/networth` | Show assets minus liabilities | `/networth` |
 | `/history` | Show recent transactions | `/history` |
 | `/undo` | Remove last transaction | `/undo` |
-| `/status` | Financial dashboard summary | `/status` |
+| `/status` | Compact financial status snapshot | `/status` |
 | `/money` | Financial snapshot | `/money` |
-| `/financial_health` | Financial scorecard with health label, drag, and focus | `/financial_health` |
-| `/transfer` | move money between `bank` and `savings` | `/transfer 89 savings bank` |
+| `/transfer` | Move money between `bank` and `savings` | `/transfer 89 savings bank` |
 
 ---
 
@@ -72,7 +72,7 @@ These commands answer the most common financial questions quickly.
 
 | Command | Description | Example |
 |---------|-------------|---------|
-| `/money_graph` | Graph of bank, debt and net worth projection | `/money_graph` |
+| `/money_graph` | Graph of bank, debt, and net worth projection | `/money_graph` |
 | `/future_graph` | Financial projection graph | `/future_graph 24` |
 | `/milestones` | Key financial milestones | `/milestones` |
 | `/milestones_graph` | Visual timeline of milestones | `/milestones_graph` |
@@ -86,11 +86,12 @@ These commands answer the most common financial questions quickly.
 
 | Command | Description | Example |
 |---------|-------------|---------|
+| `/focus` | Compact current financial priority | `/focus` |
+| `/autopilot` | Full recommendation with why, do now, and watch next | `/autopilot` |
 | `/caniafford` | Check if a purchase is safe | `/caniafford 1500` |
-| `/goal` | Savings goal calculator | `/goal 5000` |
+| `/financial_health` | Financial scorecard with health label, drag, and focus | `/financial_health` |
 | `/emergency_fund` | Emergency fund target analysis | `/emergency_fund` |
-| `/autopilot` | AI financial recommendation engine | `/autopilot` |
-| `/focus` | One-line current financial priority | `/focus` |
+| `/goal` | Savings goal calculator | `/goal 5000` |
 
 ---
 
@@ -101,13 +102,13 @@ These commands answer the most common financial questions quickly.
 | `/forecast` | Text forecast of upcoming balance changes | `/forecast` |
 | `/forecast_graph` | 30-day balance projection chart | `/forecast_graph` |
 | `/endmonth` | Project balance after the next 30 days of recurring income and bills | `/endmonth` |
-| `/untilpayday` | Shows the lowest balance before the next income arrives | `/untilpayday` |
 | `/whatif` | Simulate balance with a hypothetical spend | `/whatif 50` |
 | `/upcoming` | Show upcoming recurring events | `/upcoming bill 60 25` |
 | `/year_projection` | 12-month projection using recurring cashflow | `/year_projection` |
 | `/dashboard_graph` | Visual dashboard of bank, debt and net worth | `/dashboard_graph 60` |
 | `/life_projection` | Long-term projection with debt-free and FI estimates | `/life_projection` |
 | `/runway` | Cashflow runway based on recent income, expenses, and recurring net | `/runway` |
+| `/untilpayday` | Show how tight things get before your next income arrives | `/untilpayday` |
 | `/why` | Explain which upcoming expenses drive your lowest projected balance | `/why` |
 
 ---
@@ -131,9 +132,9 @@ These commands answer the most common financial questions quickly.
 |-------|-------------|--------|
 | `/monthly` | This month's income, expenses, and net; use detail for breakdown | `/monthly detail` |
 | `/cashflow` | Recurring monthly income vs bills; use `detail` for line items | `/cashflow detail` |
-| `/summary` | 30-day spending breakdown by category | `/summary` |
+| `/summary` | Show where your last 30 days of spending went by category | `/summary` |
 | `/risk` | Calculate a financial risk score based on cashflow, savings, and debt | `/risk` |
-| `/burn` | Uses recurring income and expenses to estimate burn | `/burn` |
+| `/burn` | Estimate burn and runway using recurring cashflow plus recent 30-day trends | `/burn` |
 | `/budget` | Budget versus actual spending (30 days) | `/budget` |
 | `/budget_set` | Set a category budget | `/budget_set food 1000` |
 | `/budget_list` | List saved budgets | `/budget_list` |

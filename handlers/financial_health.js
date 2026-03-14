@@ -2,7 +2,7 @@
 module.exports = function registerFinancialHealthHandler(bot, deps) {
   const { db, ledgerService, format, finance } = deps;
   const { formatMoney, codeBlock } = format;
-  const { getRecurringMonthlyNet } = finance;
+  const { getRecurringMonthlyNet, getDebtRows } = finance;
 
   function label(score) {
     if (score >= 85) return "Excellent";
@@ -59,19 +59,13 @@ module.exports = function registerFinancialHealthHandler(bot, deps) {
 
       let bankBalance = 0;
       let totalAssets = 0;
-      let totalLiabilities = 0;
 
       for (const b of balances) {
         const amt = Number(b.balance) || 0;
 
         if (b.account === "assets:bank") bankBalance = amt;
         if (String(b.account).startsWith("assets:")) totalAssets += amt;
-        if (String(b.account).startsWith("liabilities:")) {
-          totalLiabilities += Math.abs(amt);
-        }
       }
-
-      const netWorth = totalAssets - totalLiabilities;
 
       const rows = db.prepare(`
         SELECT
@@ -99,15 +93,12 @@ module.exports = function registerFinancialHealthHandler(bot, deps) {
       const recurring = getRecurringMonthlyNet(db);
       const recurringNet = recurring.net;
 
-      const debts = db.prepare(`
-        SELECT balance, apr
-        FROM debts
-      `).all();
+      const debtRows = getDebtRows(db);
 
       let totalDebt = 0;
       let weightedApr = 0;
 
-      for (const d of debts) {
+      for (const d of debtRows) {
         const bal = Number(d.balance) || 0;
         const apr = Number(d.apr) || 0;
 
@@ -116,6 +107,8 @@ module.exports = function registerFinancialHealthHandler(bot, deps) {
       }
 
       if (totalDebt > 0) weightedApr /= totalDebt;
+
+      const netWorth = totalAssets - totalDebt;
 
       let runwayMonths = Infinity;
       if (netMonthly < 0) {
