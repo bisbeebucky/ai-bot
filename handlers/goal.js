@@ -10,7 +10,7 @@ module.exports = function registerGoalHandler(bot, deps) {
 
   function renderHelp() {
     return [
-      "*\\/goal*",
+      "*/goal*",
       "Estimate whether a purchase or savings goal is already funded, and if not, when it may become affordable.",
       "",
       "*Usage*",

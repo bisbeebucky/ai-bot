@@ -147,7 +147,7 @@ function buildCommandRegistry(files) {
     if (!entry) return null;
 
     const lines = [
-      `*\\/${escapeMarkdown(entry.command)}*`,
+      `*/${escapeMarkdown(entry.command)}*`,
       escapeMarkdown(entry.summary)
     ];
 
