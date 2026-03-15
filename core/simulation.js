@@ -62,10 +62,18 @@ function simulateCashflow(db, startingBalance, accountId, days = 30) {
     }
   }
 
-  // Sort FIRST, then calculate running balances
+  // Sort by date, then income before expenses on the same day,
+  // then fall back to description for stable ordering.
   events.sort((a, b) => {
     const byDate = String(a.date).localeCompare(String(b.date));
     if (byDate !== 0) return byDate;
+
+    const aAmount = Number(a.amount) || 0;
+    const bAmount = Number(b.amount) || 0;
+
+    if (aAmount >= 0 && bAmount < 0) return -1;
+    if (aAmount < 0 && bAmount >= 0) return 1;
+
     return String(a.description || "").localeCompare(String(b.description || ""));
   });
 
