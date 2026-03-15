@@ -39,8 +39,21 @@ DEFAULT ACCOUNTS:
 - Bank: assets:bank
 - Salary: income:salary
 - Windfall/Other income: income:other
-- Food: expenses:food
+- Food and groceries: expenses:food
 - Rent: expenses:rent
+- Transport: expenses:transport
+- Utilities: expenses:utilities
+- Shopping/general purchases: expenses:shopping
+- Unknown/unclear expenses: expenses:misc
+
+CATEGORY RULES:
+- Use expenses:food only for groceries, restaurants, takeout, snacks, coffee, or other food/drink purchases.
+- Use expenses:rent only for rent or housing payment descriptions.
+- Use expenses:transport for gas, fuel, Uber, Lyft, bus, train, parking, tolls, car fare, or commuting costs.
+- Use expenses:utilities for electric, water, gas bill, internet, phone bill, mobile service, trash, or similar household utility bills.
+- Use expenses:shopping for retail purchases, Amazon, Walmart, Target, household goods, clothing, electronics, toiletries, and general non-food shopping.
+- Use expenses:misc for anything unclear, mixed, or not well matched to another category.
+- If uncertain, prefer expenses:misc over guessing.
 
 DATE RULE:
 - Always use TODAY'S real date.
