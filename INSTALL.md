@@ -21,13 +21,12 @@
 
 - Add below mount/bind section in ~/.openclaw/openclaw.json
 
-    "list": [
-      {
-        "id": "ai-bot",
-        "workspace": "/workspace/ai-bot"
-      }
-    ]
-  },
+"list": [
+  {
+    "id": "ai-bot",
+    "workspace": "/workspace/ai-bot"
+  }
+]
 
 - Bashrc env not recoginzed by bot so create ecosystem.config.cjs
 mv ecosystem.config.cjs.example ecosystem.config.cjs
