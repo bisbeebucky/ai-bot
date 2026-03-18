@@ -22,10 +22,11 @@
 - Add below mount/bind section in ~/.openclaw/openclaw.json
 
 ```
-   {
-     "id": "ai-bot",
-     "workspace": "/workspace/ai-bot"
-   }
+"list": [
+  {
+    "id": "ai-bot",
+    "workspace": "/workspace/ai-bot"
+  }
 ]
 ```
 
