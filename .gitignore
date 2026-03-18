@@ -1,0 +1,30 @@
+*.log
+node_modules/
+.env
+.env.*
+npm-debug.log
+.DS_Store
+
+# local runtime / deployment
+.openclaw/
+ecosystem.config.cjs
+*.bak
+
+# local generated docs
+AGENTS.md
+HEARTBEAT.md
+IDENTITY.md
+SOUL.md
+TOOLS.md
+USER.md
+
+# sqlite data
+data/*.sqlite
+data/*.sqlite-shm
+data/*.sqlite-wal
+
+# local generated registry
+data/help_registry.js
+
+# local backup files
+handlers/*.bak
