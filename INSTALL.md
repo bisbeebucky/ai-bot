@@ -17,7 +17,7 @@
 - OpenRouter key is currently provided through OPENAI_API_KEY env naming
 
 ## Digital Ocean Specifics
--mv ai-bot to ~/.openclaw/workspace
+- mv ai-bot to ~/.openclaw/workspace
 
 - Add below mount/bind section in ~/.openclaw/openclaw.json
 
