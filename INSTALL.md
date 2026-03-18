@@ -30,8 +30,7 @@
 ]
 ```
 
-- Bashrc env not recoginzed by bot so create ecosystem.config.cjs
-mv ecosystem.config.cjs.example ecosystem.config.cjs
-and add you own tokens.
+- Bashrc env not recoginzed by bot so create ecosystem.config.cjs and add your own tokens
+- mv ecosystem.config.cjs.example ecosystem.config.cjs
 
 
