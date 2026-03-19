@@ -31,6 +31,8 @@ npm install
 - The OpenRouter key is currently passed through the OPENAI_API_KEY environment variable name.
 
 ## Digital Ocean Specifics
+
+- Move the ai-bot directory into the Docker container workspace
 ```
 </>Bash
 
@@ -51,6 +53,6 @@ npm install
 - Bashrc env not recoginzed by bot so create ecosystem.config.cjs and add your own tokens
 ```
 </>Bash
-```
+
 `mv ecosystem.config.cjs.example ecosystem.config.cjs`
 ```
