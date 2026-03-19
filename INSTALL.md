@@ -39,7 +39,7 @@
 ```
 </>Bash
 
-`mv projects/ai-bot ~/.openclaw/workspace`
+`mv ai-bot ~/.openclaw/workspace`
 ```
 
 - Add below mount/bind section in ~/.openclaw/openclaw.json
@@ -57,5 +57,5 @@
 ```
 </>Bash
 
-`mv ecosystem.config.cjs.example ecosystem.config.cjs`
+`mv ~/workspace/ai-bot/ecosystem.config.cjs.example ~/workspace/ai-bot/ecosystem.config.cjs`
 ```
