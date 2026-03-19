@@ -10,15 +10,15 @@
 ```
 </> Bash
 
-`git clone https://github.com/bisbeebucky/ai-bot`
-`cd ai-bot`
+git clone https://github.com/bisbeebucky/ai-bot
+cd ai-bot
 ```
 
 2. Install dependencies:
 ```
 </> Bash
 
-`npm install`
+npm install
 ```
 
 3. Set environment variables.
@@ -39,7 +39,7 @@
 ```
 </> Bash
 
-`mv ai-bot ~/.openclaw/workspace`
+mv ai-bot ~/.openclaw/workspace
 ```
 
 - Add below the agents section in ~/.openclaw/openclaw.json
@@ -55,7 +55,7 @@
 ```
 - Bashrc env not recoginzed by bot so create ecosystem.config.cjs and add your own tokens
 ```
-</>Bash
+</> Bash
 
-`mv ~/workspace/ai-bot/ecosystem.config.cjs.example ~/workspace/ai-bot/ecosystem.config.cjs`
+mv ~/workspace/ai-bot/ecosystem.config.cjs.example ~/workspace/ai-bot/ecosystem.config.cjs
 ```
