@@ -58,6 +58,7 @@ These commands answer the most common financial questions quickly.
 | `/deposit` | Add money to bank | `/deposit 500 paycheck` |
 | `/withdraw` | Remove money from bank | `/withdraw 50 cash` |
 | `/balance` | Show bank balance | `/balance` |
+| `/balance_on` | Estimate your `assets:bank` balance on a future date | `/balance_on <YYYY-MM-DD>` |
 | `/save` | Save money to savings | `/save 50` |
 | `/savings` | Show bank savings balance | `/savings` |
 | `/accounts` | List account balances | `/accounts` |
