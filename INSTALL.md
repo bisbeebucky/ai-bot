@@ -7,15 +7,18 @@
 
 ## Deploy steps
 1. Clone the repo:
-   ```bash
-   git clone https://github.com/bisbeebucky/ai-bot
-   cd ai-bot
+```
+</>Bash
+
+`git clone https://github.com/bisbeebucky/ai-bot`
+`cd ai-bot`
+```
 
 2. Install dependencies:
 ```
 </>Bash
 
-npm install
+`npm install`
 ```
 
 3. Set environment variables.
@@ -36,7 +39,7 @@ npm install
 ```
 </>Bash
 
-`mv ai-bot to ~/.openclaw/workspace`
+`mv projects/ai-bot ~/.openclaw/workspace`
 ```
 
 - Add below mount/bind section in ~/.openclaw/openclaw.json
