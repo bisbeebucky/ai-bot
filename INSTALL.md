@@ -42,7 +42,7 @@
 `mv ai-bot ~/.openclaw/workspace`
 ```
 
-- Add below mount/bind section in ~/.openclaw/openclaw.json
+- Add below the agents section in ~/.openclaw/openclaw.json
 ```
 </> JSON
 
