@@ -1,27 +1,46 @@
 # INSTALL
 
 ## Prerequisites
-- Node version 22
+- Node.js 22
 - npm
-- pm2
+- PM2
 
 ## Deploy steps
-- clone repo
-- install dependencies, npm install
-- set environment variables
-- start with PM2
+1. Clone the repo:
+   ```bash
+   git clone https://github.com/bisbeebucky/ai-bot
+   cd ai-bot
+
+2. Install dependencies:
+```
+</>Bash
+
+npm install
+```
+
+3. Set environment variables.
+
+4. Start the bot with PM2.
 
 ## Notes
-- database files are local and ignored
-- use a separate Telegram token for production
-- OpenRouter key is currently provided through OPENAI_API_KEY env naming
+
+- Local database files are automatically generated and ignored by Git.
+
+- Use a separate Telegram bot token for production.
+
+- The OpenRouter key is currently passed through the OPENAI_API_KEY environment variable name.
 
 ## Digital Ocean Specifics
-- mv ai-bot to ~/.openclaw/workspace
+```
+</>Bash
+
+`mv ai-bot to ~/.openclaw/workspace`
+```
 
 - Add below mount/bind section in ~/.openclaw/openclaw.json
-
 ```
+</> JSON
+
 "list": [
   {
     "id": "ai-bot",
@@ -29,8 +48,9 @@
   }
 ]
 ```
-
 - Bashrc env not recoginzed by bot so create ecosystem.config.cjs and add your own tokens
-- mv ecosystem.config.cjs.example ecosystem.config.cjs
-
-
+```
+</>Bash
+```
+`mv ecosystem.config.cjs.example ecosystem.config.cjs`
+```

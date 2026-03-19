@@ -1,7 +1,7 @@
 // handlers/balance.js
 module.exports = function registerBalanceHandler(bot, deps) {
   const { db, format } = deps;
-  const { formatMoney, codeBlock } = format;
+  const { formatMoney } = format;
 
   function renderHelp() {
     return [
@@ -68,14 +68,14 @@ module.exports = function registerBalanceHandler(bot, deps) {
       return bot.sendMessage(
         chatId,
         [
-          "💰 *Current Balance*",
+          "💰 <b>Current Balance</b>",
           "",
-          codeBlock([
+          "<pre>" + [
             `Account  assets:bank`,
             `Balance  ${formatMoney(balance)}`
-          ].join("\n"))
+          ].join("\n") + "</pre>"
         ].join("\n"),
-        { parse_mode: "Markdown" }
+        { parse_mode: "HTML" }
       );
     } catch (err) {
       console.error("Balance error:", err);
