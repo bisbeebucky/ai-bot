@@ -8,7 +8,7 @@
 ## Deploy steps
 1. Clone the repo:
 ```
-</>Bash
+</> Bash
 
 `git clone https://github.com/bisbeebucky/ai-bot`
 `cd ai-bot`
@@ -16,7 +16,7 @@
 
 2. Install dependencies:
 ```
-</>Bash
+</> Bash
 
 `npm install`
 ```
@@ -37,7 +37,7 @@
 
 - Move the ai-bot directory into the Docker container workspace
 ```
-</>Bash
+</> Bash
 
 `mv ai-bot ~/.openclaw/workspace`
 ```
