@@ -29,8 +29,15 @@ module.exports = function registerWhyHandler(bot, deps) {
     return d;
   }
 
-  bot.onText(/^\/why(?:@\w+)?(?:\s+(.*))?$/i, (msg, match) => {
+  function todayYMD() {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
 
+  bot.onText(/^\/why(?:@\w+)?(?:\s+(.*))?$/i, (msg, match) => {
     const chatId = msg.chat.id;
     const raw = String(match?.[1] || "").trim();
 
@@ -52,7 +59,6 @@ module.exports = function registerWhyHandler(bot, deps) {
     }
 
     try {
-
       const checking = db.prepare(`
         SELECT id
         FROM accounts
@@ -73,12 +79,26 @@ module.exports = function registerWhyHandler(bot, deps) {
 
       const sim = simulateCashflow(db, currentBalance, checking.id, 30);
       const timeline = Array.isArray(sim?.timeline) ? sim.timeline : [];
+      const lowest = Number(sim?.lowestBalance) || currentBalance;
 
       if (!timeline.length) {
-        return bot.sendMessage(chatId, "No forecast data available.");
+        return bot.sendMessage(
+          chatId,
+          [
+            "🧠 *Why Your Balance Drops*",
+            "",
+            codeBlock([
+              `Lowest Balance   ${formatMoney(currentBalance)}`,
+              `Date             ${todayYMD()}`,
+              "",
+              "Main Causes",
+              "No upcoming recurring events were found in the forecast window.",
+              "Your current balance is also your projected lowest balance."
+            ].join("\n"))
+          ].join("\n"),
+          { parse_mode: "Markdown" }
+        );
       }
-
-      const lowest = Number(sim?.lowestBalance) || currentBalance;
 
       let lowestDate = null;
 
@@ -90,13 +110,27 @@ module.exports = function registerWhyHandler(bot, deps) {
       }
 
       if (!lowestDate) {
-        return bot.sendMessage(chatId, "Could not determine lowest balance date.");
+        return bot.sendMessage(
+          chatId,
+          [
+            "🧠 *Why Your Balance Drops*",
+            "",
+            codeBlock([
+              `Lowest Balance   ${formatMoney(lowest)}`,
+              `Date             ${todayYMD()}`,
+              "",
+              "Main Causes",
+              "No future event drops your balance below where it is today.",
+              "Your current balance is the projected low point."
+            ].join("\n"))
+          ].join("\n"),
+          { parse_mode: "Markdown" }
+        );
       }
 
       const causes = [];
 
       for (const e of timeline) {
-
         const d = parseLocalDate(e.date);
         const amt = Number(e.amount) || 0;
 
@@ -112,9 +146,28 @@ module.exports = function registerWhyHandler(bot, deps) {
 
       const top = causes.slice(0, 5);
 
+      if (!top.length) {
+        return bot.sendMessage(
+          chatId,
+          [
+            "🧠 *Why Your Balance Drops*",
+            "",
+            codeBlock([
+              `Lowest Balance   ${formatMoney(lowest)}`,
+              `Date             ${lowestDate.toISOString().slice(0, 10)}`,
+              "",
+              "Main Causes",
+              "No expense events were found before the low point."
+            ].join("\n"))
+          ].join("\n"),
+          { parse_mode: "Markdown" }
+        );
+      }
+
       const lines = top.map((c, i) =>
-        `${String(i + 1).padEnd(2)} ${c.description.padEnd(12)} ${formatMoney(c.amount)}`
+        `${String(i + 1).padEnd(2)} ${c.description.padEnd(20)} ${formatMoney(c.amount)}`
       );
+
       const out = [
         "🧠 *Why Your Balance Drops*",
         "",
@@ -128,16 +181,11 @@ module.exports = function registerWhyHandler(bot, deps) {
       ].join("\n");
 
       return bot.sendMessage(chatId, out, { parse_mode: "Markdown" });
-
     } catch (err) {
-
       console.error("why error:", err);
       return bot.sendMessage(chatId, "Error explaining forecast.");
-
     }
-
   });
-
 };
 
 module.exports.help = {
