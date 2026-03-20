@@ -124,7 +124,7 @@ export OPENAI_API_KEY=YOUR_KEY
 
 <p>
 OpenClaw can connect your Telegram bot without pairing.
-All you need is a your telegram token.
+All you need is your telegram token.
 </p>
 
 <hr>
