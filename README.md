@@ -123,17 +123,7 @@ export OPENAI_API_KEY=YOUR_KEY
 <h2>🔗 Pairing Telegram with OpenClaw</h2>
 
 <p>
-OpenClaw can connect your Telegram bot to an AI agent runtime. 
-</p>
-
-<p>
-<strong>⚠️ The pairing code may open in a different Telegram window.</strong>
-</p>
-
-<p>
-During setup, Telegram may open a separate conversation called 
-<strong>"Telegram"</strong> where the pairing code appears. 
-If you do not see the code in your current chat, check that window.
+OpenClaw can connect your Telegram bot without pairing. 
 </p>
 
 <hr>
