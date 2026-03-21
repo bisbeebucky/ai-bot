@@ -1,7 +1,14 @@
 // handlers/chat.js
 module.exports = function registerChatHandler(bot, deps) {
-  const { openai, ledgerService, db, format, simulateCashflow } = deps;
-  const { formatMoney, renderTable } = format;
+  const { openai, ledgerService, db, format, simulateCashflow, finance } = deps;
+  const { formatMoney, renderTable, codeBlock } = format;
+  const {
+    getStartingAssets,
+    getRecurringMonthlyNet,
+    getDebtRows,
+    getMonthlyExpenses,
+    futureMonthLabel
+  } = finance || {};
 
   const systemPrompt = `
 You are a finance assistant.
@@ -149,6 +156,16 @@ DATE RULE:
     return Math.round((toDate.getTime() - fromDate.getTime()) / msPerDay);
   }
 
+  function parseLocalDate(dateStr) {
+    const s = String(dateStr || "").trim();
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return null;
+
+    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    d.setHours(12, 0, 0, 0);
+    return d;
+  }
+
   function wantsBalance(text) {
     return text.includes("my balance") || text === "balance";
   }
@@ -188,6 +205,47 @@ DATE RULE:
     return /^will i overdraft\??$/.test(text) ||
       /^am i going to overdraft\??$/.test(text) ||
       /^do i have overdraft risk\??$/.test(text);
+  }
+
+  function wantsNetWorth(text) {
+    return text.includes("my net worth") || text === "net worth";
+  }
+
+  function wantsEmergencyFund(text) {
+    return text.includes("my emergency fund") || text === "emergency fund";
+  }
+
+  function wantsWhy(text) {
+    return text === "why does my balance drop?" ||
+      text === "why does my balance drop" ||
+      text === "why is my balance dropping?" ||
+      text === "why is my balance dropping" ||
+      text === "why do i go low?" ||
+      text === "why do i go low" ||
+      text === "why do i go negative?" ||
+      text === "why do i go negative";
+  }
+
+  function wantsDueNext(text) {
+    return text === "whats due next?" ||
+      text === "whats due next" ||
+      text === "what's due next?" ||
+      text === "what's due next" ||
+      text === "what bills are due next?" ||
+      text === "what bills are due next" ||
+      text === "what recurring bills are due next?" ||
+      text === "what recurring bills are due next";
+  }
+
+  function wantsPayday(text) {
+    return text === "when is payday?" ||
+      text === "when is payday" ||
+      text === "when do i get paid next?" ||
+      text === "when do i get paid next" ||
+      text === "whats my next paycheck date?" ||
+      text === "whats my next paycheck date" ||
+      text === "what's my next paycheck date?" ||
+      text === "what's my next paycheck date";
   }
 
   function sendBalance(chatId) {
@@ -500,6 +558,316 @@ DATE RULE:
     });
   }
 
+  function sendNetWorth(chatId) {
+    if (!getStartingAssets || !getDebtRows) {
+      return bot.sendMessage(chatId, "Net worth helper not available.");
+    }
+
+    const starting = getStartingAssets(ledgerService);
+    const debtRows = getDebtRows(db);
+    const totalDebt = debtRows.reduce((sum, d) => sum + (Number(d.balance) || 0), 0);
+    const netWorth = Number(starting.total || 0) - totalDebt;
+
+    return bot.sendMessage(
+      chatId,
+      [
+        "🏦 *Net Worth*",
+        "",
+        renderTable(
+          ["Item", "Amount"],
+          [
+            ["Bank", formatMoney(Number(starting.bank) || 0)],
+            ["Savings", formatMoney(Number(starting.savings) || 0)],
+            ["Assets", formatMoney(Number(starting.total) || 0)],
+            ["Debt", formatMoney(totalDebt)],
+            ["Net Worth", `${netWorth >= 0 ? "+" : "-"}${formatMoney(Math.abs(netWorth))}`]
+          ],
+          { aligns: ["left", "right"] }
+        )
+      ].join("\n"),
+      { parse_mode: "Markdown" }
+    );
+  }
+
+  function sendEmergencyFund(chatId) {
+    if (!getRecurringMonthlyNet || !getMonthlyExpenses) {
+      return bot.sendMessage(chatId, "Emergency fund helper not available.");
+    }
+
+    const checking = db.prepare(`
+      SELECT id
+      FROM accounts
+      WHERE name = 'assets:bank'
+    `).get();
+
+    if (!checking) {
+      return bot.sendMessage(chatId, "assets:bank account not found.");
+    }
+
+    const row = db.prepare(`
+      SELECT IFNULL(SUM(amount), 0) as balance
+      FROM postings
+      WHERE account_id = ?
+    `).get(checking.id);
+
+    const cashOnHand = Number(row?.balance) || 0;
+    const monthlyExpenses = Number(getMonthlyExpenses(db)) || 0;
+    const recurring = getRecurringMonthlyNet(db);
+    const targetMonths = 3;
+    const targetFund = monthlyExpenses * targetMonths;
+    const surplus = Number(recurring?.net) || 0;
+    const fundedPct = targetFund > 0 ? Math.floor((cashOnHand / targetFund) * 100) : 0;
+    const gap = Math.max(0, targetFund - cashOnHand);
+
+    let etaText = "Already funded";
+    if (gap > 0) {
+      if (surplus > 0) {
+        etaText = `${Math.ceil(gap / surplus)} month(s)`;
+      } else {
+        etaText = "Not available with current surplus";
+      }
+    }
+
+    const status =
+      targetFund > 0 && cashOnHand >= targetFund
+        ? "🟢 Funded."
+        : "🟡 In progress.";
+
+    return bot.sendMessage(
+      chatId,
+      [
+        "🛟 *Emergency Fund*",
+        "",
+        codeBlock([
+          `Cash on Hand      ${formatMoney(cashOnHand)}`,
+          `Monthly Expenses  ${formatMoney(monthlyExpenses)}`,
+          `Target Months     ${targetMonths}`,
+          `Target Fund       ${formatMoney(targetFund)}`,
+          `Recurring Surplus ${surplus >= 0 ? "+" : "-"}${formatMoney(Math.abs(surplus))}`,
+          `Funded            ${targetFund > 0 ? `${fundedPct}%` : "n/a"}`,
+          `Gap               ${formatMoney(gap)}`,
+          `ETA               ${etaText}`
+        ].join("\n")),
+        "",
+        status
+      ].join("\n"),
+      { parse_mode: "Markdown" }
+    );
+  }
+
+  function sendWhy(chatId) {
+    const checking = db.prepare(`
+      SELECT id
+      FROM accounts
+      WHERE name = 'assets:bank'
+    `).get();
+
+    if (!checking) {
+      return bot.sendMessage(chatId, "Checking account not found.");
+    }
+
+    const balanceRow = db.prepare(`
+      SELECT IFNULL(SUM(amount),0) as balance
+      FROM postings
+      WHERE account_id = ?
+    `).get(checking.id);
+
+    const currentBalance = Number(balanceRow?.balance) || 0;
+    const sim = simulateCashflow(db, currentBalance, checking.id, 30);
+    const timeline = Array.isArray(sim?.timeline) ? sim.timeline : [];
+    const lowest = Number(sim?.lowestBalance) || currentBalance;
+
+    if (!timeline.length) {
+      return bot.sendMessage(
+        chatId,
+        [
+          "🧠 *Why Your Balance Drops*",
+          "",
+          codeBlock([
+            `Lowest Balance   ${formatMoney(currentBalance)}`,
+            `Date             ${todayYMD()}`,
+            "",
+            "Main Causes",
+            "No upcoming recurring events were found in the forecast window.",
+            "Your current balance is also your projected lowest balance."
+          ].join("\n"))
+        ].join("\n"),
+        { parse_mode: "Markdown" }
+      );
+    }
+
+    let lowestDate = null;
+    for (const e of timeline) {
+      if (Number(e.balance) === lowest) {
+        lowestDate = parseLocalDate(e.date);
+        break;
+      }
+    }
+
+    if (!lowestDate) {
+      return bot.sendMessage(
+        chatId,
+        [
+          "🧠 *Why Your Balance Drops*",
+          "",
+          codeBlock([
+            `Lowest Balance   ${formatMoney(lowest)}`,
+            `Date             ${todayYMD()}`,
+            "",
+            "Main Causes",
+            "No future event drops your balance below where it is today.",
+            "Your current balance is the projected low point."
+          ].join("\n"))
+        ].join("\n"),
+        { parse_mode: "Markdown" }
+      );
+    }
+
+    const causes = [];
+    for (const e of timeline) {
+      const d = parseLocalDate(e.date);
+      const amt = Number(e.amount) || 0;
+
+      if (d && d <= lowestDate && amt < 0) {
+        causes.push({
+          description: e.description || "expense",
+          amount: Math.abs(amt)
+        });
+      }
+    }
+
+    causes.sort((a, b) => b.amount - a.amount);
+    const top = causes.slice(0, 5);
+
+    if (!top.length) {
+      return bot.sendMessage(
+        chatId,
+        [
+          "🧠 *Why Your Balance Drops*",
+          "",
+          codeBlock([
+            `Lowest Balance   ${formatMoney(lowest)}`,
+            `Date             ${lowestDate.toISOString().slice(0, 10)}`,
+            "",
+            "Main Causes",
+            "No expense events were found before the low point."
+          ].join("\n"))
+        ].join("\n"),
+        { parse_mode: "Markdown" }
+      );
+    }
+
+    const lines = top.map((c, i) =>
+      `${String(i + 1).padEnd(2)} ${c.description.padEnd(20)} ${formatMoney(c.amount)}`
+    );
+
+    return bot.sendMessage(
+      chatId,
+      [
+        "🧠 *Why Your Balance Drops*",
+        "",
+        codeBlock([
+          `Lowest Balance   ${formatMoney(lowest)}`,
+          `Date             ${lowestDate.toISOString().slice(0, 10)}`,
+          "",
+          "Main Causes",
+          ...lines
+        ].join("\n"))
+      ].join("\n"),
+      { parse_mode: "Markdown" }
+    );
+  }
+
+  function sendDueNext(chatId) {
+    const rows = db.prepare(`
+      SELECT id, hash, description, frequency, next_due_date, postings_json
+      FROM recurring_transactions
+      ORDER BY date(next_due_date) ASC, id ASC
+      LIMIT 5
+    `).all();
+
+    if (!rows.length) {
+      return bot.sendMessage(chatId, "No recurring items saved.");
+    }
+
+    const tableRows = rows.map((row) => {
+      let amount = 0;
+      let direction = "unknown";
+
+      try {
+        const postings = JSON.parse(row.postings_json);
+        const bankLine = Array.isArray(postings)
+          ? postings.find((p) => p.account === "assets:bank")
+          : null;
+
+        if (bankLine) {
+          const bankAmt = Number(bankLine.amount) || 0;
+          amount = Math.abs(bankAmt);
+          direction = bankAmt >= 0 ? "income" : "bill";
+        }
+      } catch (_) {
+        // ignore malformed postings_json
+      }
+
+      return [
+        String(row.next_due_date || ""),
+        String(row.description || ""),
+        formatMoney(amount),
+        direction
+      ];
+    });
+
+    return bot.sendMessage(
+      chatId,
+      [
+        "⏭️ *Due Next*",
+        "",
+        renderTable(
+          ["Next Due", "Description", "Amount", "Type"],
+          tableRows,
+          { aligns: ["left", "left", "right", "left"] }
+        )
+      ].join("\n"),
+      { parse_mode: "Markdown" }
+    );
+  }
+
+  function sendPayday(chatId) {
+    const rows = db.prepare(`
+      SELECT id, hash, description, frequency, next_due_date, postings_json
+      FROM recurring_transactions
+      ORDER BY date(next_due_date) ASC, id ASC
+    `).all();
+
+    const incomeRows = rows.filter((row) => {
+      try {
+        const postings = JSON.parse(row.postings_json);
+        const bankLine = Array.isArray(postings)
+          ? postings.find((p) => p.account === "assets:bank")
+          : null;
+        return bankLine && (Number(bankLine.amount) || 0) > 0;
+      } catch (_) {
+        return false;
+      }
+    });
+
+    if (!incomeRows.length) {
+      return bot.sendMessage(chatId, "No recurring income items found.");
+    }
+
+    const next = incomeRows[0];
+    return bot.sendMessage(
+      chatId,
+      [
+        "💵 *Next Payday*",
+        "",
+        `Description: \`${String(next.description || "")}\``,
+        `Next Date: \`${String(next.next_due_date || "")}\``
+      ].join("\n"),
+      { parse_mode: "Markdown" }
+    );
+  }
+
   bot.on("message", async (msg) => {
     try {
       if (!msg?.text) return;
@@ -533,6 +901,26 @@ DATE RULE:
 
       if (wantsForecast(normalized) || wantsOverdraft(normalized)) {
         return sendForecast(chatId);
+      }
+
+      if (wantsNetWorth(normalized)) {
+        return sendNetWorth(chatId);
+      }
+
+      if (wantsEmergencyFund(normalized)) {
+        return sendEmergencyFund(chatId);
+      }
+
+      if (wantsWhy(normalized)) {
+        return sendWhy(chatId);
+      }
+
+      if (wantsDueNext(normalized)) {
+        return sendDueNext(chatId);
+      }
+
+      if (wantsPayday(normalized)) {
+        return sendPayday(chatId);
       }
 
       const completion = await openai.chat.completions.create({
