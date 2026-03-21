@@ -1,6 +1,6 @@
 // handlers/chat.js
 module.exports = function registerChatHandler(bot, deps) {
-  const { openai, ledgerService, db, format } = deps;
+  const { openai, ledgerService, db, format, simulateCashflow } = deps;
   const { formatMoney, renderTable } = format;
 
   const systemPrompt = `
@@ -114,24 +114,80 @@ DATE RULE:
       .replace(/\s+/g, " ");
   }
 
+  function parseYMD(value) {
+    const s = String(value || "").trim();
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+    if (!m) return null;
+
+    const y = Number(m[1]);
+    const mo = Number(m[2]);
+    const d = Number(m[3]);
+
+    const dt = new Date(y, mo - 1, d);
+    dt.setHours(0, 0, 0, 0);
+
+    if (
+      dt.getFullYear() !== y ||
+      dt.getMonth() !== mo - 1 ||
+      dt.getDate() !== d
+    ) {
+      return null;
+    }
+
+    return dt;
+  }
+
+  function ymd(dateObj) {
+    const y = dateObj.getFullYear();
+    const m = String(dateObj.getMonth() + 1).padStart(2, "0");
+    const d = String(dateObj.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+
+  function diffDays(fromDate, toDate) {
+    const msPerDay = 24 * 60 * 60 * 1000;
+    return Math.round((toDate.getTime() - fromDate.getTime()) / msPerDay);
+  }
+
   function wantsBalance(text) {
-    return /^(what is|whats|what's|show|tell me)? ?my balance\??$/.test(text);
+    return text.includes("my balance") || text === "balance";
   }
 
   function wantsDebts(text) {
-    return /^(what are|show|list|tell me)? ?my debts\??$/.test(text) ||
-      /^(show|list) debts\??$/.test(text);
+    return text.includes("my debts") || text === "debts" || text === "list debts";
   }
 
   function wantsRecurring(text) {
-    return /^(show|list) my recurring bills\??$/.test(text) ||
-      /^(show|list) recurring bills\??$/.test(text) ||
-      /^(show|list) my recurring items\??$/.test(text);
+    return text.includes("recurring bills") ||
+      text.includes("recurring items") ||
+      text === "show recurring bills" ||
+      text === "list recurring bills";
   }
 
   function wantsSummary(text) {
-    return /^(show|what is|whats|what's|tell me)? ?my spending summary\??$/.test(text) ||
-      /^(show|what is|whats|what's|tell me)? ?my summary\??$/.test(text);
+    return text.includes("spending summary") ||
+      text === "show my summary" ||
+      text === "what is my summary?" ||
+      text === "whats my summary?" ||
+      text === "my summary";
+  }
+
+  function parseBalanceOnDate(text) {
+    const m = text.match(
+      /^(what will|whats|what's|what is|tell me|show me) ?my balance be on (\d{4}-\d{2}-\d{2})\??$/
+    );
+    return m ? m[2] : null;
+  }
+
+  function wantsForecast(text) {
+    return /^(what is|whats|what's|show|tell me)? ?my forecast\??$/.test(text) ||
+      /^(show|tell me) forecast\??$/.test(text);
+  }
+
+  function wantsOverdraft(text) {
+    return /^will i overdraft\??$/.test(text) ||
+      /^am i going to overdraft\??$/.test(text) ||
+      /^do i have overdraft risk\??$/.test(text);
   }
 
   function sendBalance(chatId) {
@@ -316,6 +372,134 @@ DATE RULE:
     );
   }
 
+  function sendBalanceOn(chatId, rawDate) {
+    const targetDate = parseYMD(rawDate);
+
+    if (!targetDate) {
+      return bot.sendMessage(
+        chatId,
+        "Please use a date like `2026-04-03`.",
+        { parse_mode: "Markdown" }
+      );
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const days = diffDays(today, targetDate);
+
+    if (days < 0) {
+      return bot.sendMessage(chatId, "Only future dates are supported.");
+    }
+
+    const checking = db.prepare(`
+      SELECT id
+      FROM accounts
+      WHERE name = 'assets:bank'
+    `).get();
+
+    if (!checking) {
+      return bot.sendMessage(chatId, "assets:bank account not found.");
+    }
+
+    const row = db.prepare(`
+      SELECT IFNULL(SUM(amount), 0) as balance
+      FROM postings
+      WHERE account_id = ?
+    `).get(checking.id);
+
+    const currentBalance = Number(row?.balance) || 0;
+
+    if (days === 0) {
+      return bot.sendMessage(
+        chatId,
+        [
+          "💰 *Balance On Date*",
+          "",
+          `Date: \`${ymd(targetDate)}\``,
+          `Estimated Balance: \`${formatMoney(currentBalance)}\``
+        ].join("\n"),
+        { parse_mode: "Markdown" }
+      );
+    }
+
+    const result = simulateCashflow(db, currentBalance, checking.id, days);
+    const timeline = Array.isArray(result?.timeline) ? result.timeline : [];
+
+    let estimatedBalance = currentBalance;
+    for (const evt of timeline) {
+      if (String(evt.date || "") <= ymd(targetDate)) {
+        estimatedBalance = Number(evt.balance) || 0;
+      }
+    }
+
+    return bot.sendMessage(
+      chatId,
+      [
+        "💰 *Balance On Date*",
+        "",
+        `Date: \`${ymd(targetDate)}\``,
+        `Current Balance: \`${formatMoney(currentBalance)}\``,
+        `Estimated Balance: \`${formatMoney(estimatedBalance)}\``
+      ].join("\n"),
+      { parse_mode: "Markdown" }
+    );
+  }
+
+  function sendForecast(chatId) {
+    const checking = db.prepare(`
+      SELECT id
+      FROM accounts
+      WHERE name = 'assets:bank'
+    `).get();
+
+    if (!checking) {
+      return bot.sendMessage(chatId, "Checking account `assets:bank` not found.", {
+        parse_mode: "Markdown"
+      });
+    }
+
+    const row = db.prepare(`
+      SELECT IFNULL(SUM(amount), 0) as balance
+      FROM postings
+      WHERE account_id = ?
+    `).get(checking.id);
+
+    const currentBalance = Number(row?.balance) || 0;
+    const result = simulateCashflow(db, currentBalance, checking.id, 30);
+    const timeline = Array.isArray(result?.timeline) ? result.timeline : [];
+    const lowest = Number(result?.lowestBalance) || currentBalance;
+
+    let firstNegativeDate = null;
+    for (const evt of timeline) {
+      const b = Number(evt.balance) || 0;
+      if (b < 0) {
+        firstNegativeDate = evt.date;
+        break;
+      }
+    }
+
+    const message = [
+      "📈 *30-Day Forecast*",
+      "",
+      `Current Balance: \`${formatMoney(currentBalance)}\``,
+      `Projected Lowest Balance: \`${formatMoney(lowest)}\``
+    ];
+
+    if (firstNegativeDate) {
+      message.push(`First Negative Date: \`${firstNegativeDate}\``);
+      message.push("");
+      message.push("⚠️ Overdraft risk detected in the next 30 days.");
+    } else {
+      message.push("");
+      message.push("✅ No overdraft risk in the next 30 days.");
+    }
+
+    return bot.sendMessage(chatId, message.join("\n"), {
+      parse_mode: "Markdown"
+    });
+  }
+
   bot.on("message", async (msg) => {
     try {
       if (!msg?.text) return;
@@ -325,6 +509,11 @@ DATE RULE:
       const chatId = msg.chat.id;
       const rawText = String(msg.text || "");
       const normalized = normalizeText(rawText);
+
+      const balanceOnDate = parseBalanceOnDate(normalized);
+      if (balanceOnDate) {
+        return sendBalanceOn(chatId, balanceOnDate);
+      }
 
       if (wantsBalance(normalized)) {
         return sendBalance(chatId);
@@ -340,6 +529,10 @@ DATE RULE:
 
       if (wantsSummary(normalized)) {
         return sendSummary(chatId);
+      }
+
+      if (wantsForecast(normalized) || wantsOverdraft(normalized)) {
+        return sendForecast(chatId);
       }
 
       const completion = await openai.chat.completions.create({
