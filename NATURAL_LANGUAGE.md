@@ -35,3 +35,17 @@ These natural language prompts are recognized directly in chat without needing s
 - Whats my summary?
 - What is my summary?
 - Tell me my summary
+
+## Balance on
+- what will my balance be on 2026-04-03
+
+## Forcast/Overdraft
+
+- What's my forecast
+- Whats my forecast
+- What is my forecast
+- Show my forecast
+- Tell me my forecast
+- Will i overdraft
+- Am i going to overdraft
+- Do i have overdraft risk
