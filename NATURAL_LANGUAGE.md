@@ -63,3 +63,6 @@ These natural language prompts are recognized directly in chat without needing s
 - Why does my balance drop?
 - What’s due next?
 - When is payday?
+- What income is coming up?
+- What bills are coming up?
+- What’s my lowest balance?

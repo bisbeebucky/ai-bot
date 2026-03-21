@@ -6,8 +6,7 @@ module.exports = function registerChatHandler(bot, deps) {
     getStartingAssets,
     getRecurringMonthlyNet,
     getDebtRows,
-    getMonthlyExpenses,
-    futureMonthLabel
+    getMonthlyExpenses
   } = finance || {};
 
   const systemPrompt = `
@@ -272,6 +271,34 @@ DATE RULE:
       text === "can i make it to payday" ||
       text === "will i make it until payday?" ||
       text === "will i make it until payday";
+  }
+
+  function wantsUpcomingIncome(text) {
+    return text === "what income is coming up?" ||
+      text === "what income is coming up" ||
+      text === "show my upcoming income" ||
+      text === "show upcoming income" ||
+      text === "what recurring income is coming up?" ||
+      text === "what recurring income is coming up";
+  }
+
+  function wantsUpcomingBills(text) {
+    return text === "what bills are coming up?" ||
+      text === "what bills are coming up" ||
+      text === "show my upcoming bills" ||
+      text === "show upcoming bills" ||
+      text === "what recurring bills are coming up?" ||
+      text === "what recurring bills are coming up";
+  }
+
+  function wantsLowestBalance(text) {
+    return text === "whats my lowest balance?" ||
+      text === "whats my lowest balance" ||
+      text === "what's my lowest balance?" ||
+      text === "what's my lowest balance" ||
+      text === "what is my lowest balance?" ||
+      text === "what is my lowest balance" ||
+      text === "show my lowest balance";
   }
 
   function sendBalance(chatId) {
@@ -938,7 +965,6 @@ DATE RULE:
 
     const currentBalance = Number(balanceRow?.balance) || 0;
     const sim = simulateCashflow(db, currentBalance, checking.id, 30);
-    const timeline = Array.isArray(sim?.timeline) ? sim.timeline : [];
     const lowestBeforePay = Number(sim?.lowestBalance) || currentBalance;
 
     const rows = db.prepare(`
@@ -984,6 +1010,162 @@ DATE RULE:
     return bot.sendMessage(chatId, lines.join("\n"), {
       parse_mode: "Markdown"
     });
+  }
+
+  function sendUpcomingIncome(chatId) {
+    const rows = db.prepare(`
+      SELECT id, description, next_due_date, postings_json
+      FROM recurring_transactions
+      ORDER BY date(next_due_date) ASC, id ASC
+    `).all();
+
+    const incomeRows = rows.filter((row) => {
+      try {
+        const postings = JSON.parse(row.postings_json);
+        const bankLine = Array.isArray(postings)
+          ? postings.find((p) => p.account === "assets:bank")
+          : null;
+        return bankLine && (Number(bankLine.amount) || 0) > 0;
+      } catch (_) {
+        return false;
+      }
+    });
+
+    if (!incomeRows.length) {
+      return bot.sendMessage(chatId, "No recurring income items found.");
+    }
+
+    const tableRows = incomeRows.slice(0, 5).map((row) => {
+      let amount = 0;
+      try {
+        const postings = JSON.parse(row.postings_json);
+        const bankLine = Array.isArray(postings)
+          ? postings.find((p) => p.account === "assets:bank")
+          : null;
+        amount = Math.abs(Number(bankLine?.amount) || 0);
+      } catch (_) {
+        amount = 0;
+      }
+
+      return [
+        String(row.next_due_date || ""),
+        String(row.description || ""),
+        formatMoney(amount)
+      ];
+    });
+
+    return bot.sendMessage(
+      chatId,
+      [
+        "💵 *Upcoming Income*",
+        "",
+        renderTable(
+          ["Next Date", "Description", "Amount"],
+          tableRows,
+          { aligns: ["left", "left", "right"] }
+        )
+      ].join("\n"),
+      { parse_mode: "Markdown" }
+    );
+  }
+
+  function sendUpcomingBills(chatId) {
+    const rows = db.prepare(`
+      SELECT id, description, next_due_date, postings_json
+      FROM recurring_transactions
+      ORDER BY date(next_due_date) ASC, id ASC
+    `).all();
+
+    const billRows = rows.filter((row) => {
+      try {
+        const postings = JSON.parse(row.postings_json);
+        const bankLine = Array.isArray(postings)
+          ? postings.find((p) => p.account === "assets:bank")
+          : null;
+        return bankLine && (Number(bankLine.amount) || 0) < 0;
+      } catch (_) {
+        return false;
+      }
+    });
+
+    if (!billRows.length) {
+      return bot.sendMessage(chatId, "No recurring bills found.");
+    }
+
+    const tableRows = billRows.slice(0, 5).map((row) => {
+      let amount = 0;
+      try {
+        const postings = JSON.parse(row.postings_json);
+        const bankLine = Array.isArray(postings)
+          ? postings.find((p) => p.account === "assets:bank")
+          : null;
+        amount = Math.abs(Number(bankLine?.amount) || 0);
+      } catch (_) {
+        amount = 0;
+      }
+
+      return [
+        String(row.next_due_date || ""),
+        String(row.description || ""),
+        formatMoney(amount)
+      ];
+    });
+
+    return bot.sendMessage(
+      chatId,
+      [
+        "🧾 *Upcoming Bills*",
+        "",
+        renderTable(
+          ["Next Date", "Description", "Amount"],
+          tableRows,
+          { aligns: ["left", "left", "right"] }
+        )
+      ].join("\n"),
+      { parse_mode: "Markdown" }
+    );
+  }
+
+  function sendLowestBalance(chatId) {
+    const checking = db.prepare(`
+      SELECT id
+      FROM accounts
+      WHERE name = 'assets:bank'
+    `).get();
+
+    if (!checking) {
+      return bot.sendMessage(chatId, "Checking account not found.");
+    }
+
+    const balanceRow = db.prepare(`
+      SELECT IFNULL(SUM(amount),0) as balance
+      FROM postings
+      WHERE account_id = ?
+    `).get(checking.id);
+
+    const currentBalance = Number(balanceRow?.balance) || 0;
+    const sim = simulateCashflow(db, currentBalance, checking.id, 30);
+    const timeline = Array.isArray(sim?.timeline) ? sim.timeline : [];
+    const lowest = Number(sim?.lowestBalance) || currentBalance;
+
+    let lowestDate = todayYMD();
+    for (const e of timeline) {
+      if (Number(e.balance) === lowest) {
+        lowestDate = String(e.date || lowestDate);
+        break;
+      }
+    }
+
+    return bot.sendMessage(
+      chatId,
+      [
+        "📉 *Lowest Balance*",
+        "",
+        `Projected Lowest Balance: \`${formatMoney(lowest)}\``,
+        `Date: \`${lowestDate}\``
+      ].join("\n"),
+      { parse_mode: "Markdown" }
+    );
   }
 
   bot.on("message", async (msg) => {
@@ -1047,6 +1229,18 @@ DATE RULE:
 
       if (wantsUntilPayday(normalized)) {
         return sendUntilPayday(chatId);
+      }
+
+      if (wantsUpcomingIncome(normalized)) {
+        return sendUpcomingIncome(chatId);
+      }
+
+      if (wantsUpcomingBills(normalized)) {
+        return sendUpcomingBills(chatId);
+      }
+
+      if (wantsLowestBalance(normalized)) {
+        return sendLowestBalance(chatId);
       }
 
       const completion = await openai.chat.completions.create({
