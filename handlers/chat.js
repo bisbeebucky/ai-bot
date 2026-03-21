@@ -1,6 +1,16 @@
 // handlers/chat.js
 module.exports = function registerChatHandler(bot, deps) {
-  const { openai, ledgerService, db, format, simulateCashflow, finance, queryService } = deps;
+  const {
+    openai,
+    ledgerService,
+    db,
+    format,
+    simulateCashflow,
+    finance,
+    queryService,
+    forecastQueryService
+  } = deps;
+
   const { formatMoney, renderTable, codeBlock } = format;
   const {
     getStartingAssets,
@@ -118,51 +128,6 @@ DATE RULE:
       .toLowerCase()
       .replace(/[’']/g, "")
       .replace(/\s+/g, " ");
-  }
-
-  function parseYMD(value) {
-    const s = String(value || "").trim();
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
-    if (!m) return null;
-
-    const y = Number(m[1]);
-    const mo = Number(m[2]);
-    const d = Number(m[3]);
-
-    const dt = new Date(y, mo - 1, d);
-    dt.setHours(0, 0, 0, 0);
-
-    if (
-      dt.getFullYear() !== y ||
-      dt.getMonth() !== mo - 1 ||
-      dt.getDate() !== d
-    ) {
-      return null;
-    }
-
-    return dt;
-  }
-
-  function ymd(dateObj) {
-    const y = dateObj.getFullYear();
-    const m = String(dateObj.getMonth() + 1).padStart(2, "0");
-    const d = String(dateObj.getDate()).padStart(2, "0");
-    return `${y}-${m}-${d}`;
-  }
-
-  function diffDays(fromDate, toDate) {
-    const msPerDay = 24 * 60 * 60 * 1000;
-    return Math.round((toDate.getTime() - fromDate.getTime()) / msPerDay);
-  }
-
-  function parseLocalDate(dateStr) {
-    const s = String(dateStr || "").trim();
-    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (!m) return null;
-
-    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-    d.setHours(12, 0, 0, 0);
-    return d;
   }
 
   function wantsBalance(text) {
@@ -416,65 +381,11 @@ DATE RULE:
     );
   }
 
-    function sendBalanceOn(chatId, rawDate) {
-      const targetDate = parseYMD(rawDate);
+  function sendBalanceOn(chatId, rawDate) {
+    const result = forecastQueryService.getBalanceOnDate(db, simulateCashflow, rawDate);
 
-      if (!targetDate) {
-        return bot.sendMessage(
-          chatId,
-          "Please use a date like `2026-04-03`.",
-          { parse_mode: "Markdown" }
-        );
-      }
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const days = diffDays(today, targetDate);
-
-    if (days < 0) {
-      return bot.sendMessage(chatId, "Only future dates are supported.");
-    }
-
-    const checking = db.prepare(`
-      SELECT id
-      FROM accounts
-      WHERE name = 'assets:bank'
-    `).get();
-
-    if (!checking) {
-      return bot.sendMessage(chatId, "assets:bank account not found.");
-    }
-
-    const row = db.prepare(`
-      SELECT IFNULL(SUM(amount), 0) as balance
-      FROM postings
-      WHERE account_id = ?
-    `).get(checking.id);
-
-    const currentBalance = Number(row?.balance) || 0;
-
-    if (days === 0) {
-      return bot.sendMessage(
-        chatId,
-        [
-          "💰 *Balance On Date*",
-          "",
-          `Date: \`${ymd(targetDate)}\``,
-          `Estimated Balance: \`${formatMoney(currentBalance)}\``
-        ].join("\n"),
-        { parse_mode: "Markdown" }
-      );
-    }
-
-    const result = simulateCashflow(db, currentBalance, checking.id, days);
-    const timeline = Array.isArray(result?.timeline) ? result.timeline : [];
-
-    let estimatedBalance = currentBalance;
-    for (const evt of timeline) {
-      if (String(evt.date || "") <= ymd(targetDate)) {
-        estimatedBalance = Number(evt.balance) || 0;
-      }
+    if (!result.ok) {
+      return bot.sendMessage(chatId, result.error);
     }
 
     return bot.sendMessage(
@@ -482,56 +393,30 @@ DATE RULE:
       [
         "💰 *Balance On Date*",
         "",
-        `Date: \`${ymd(targetDate)}\``,
-        `Current Balance: \`${formatMoney(currentBalance)}\``,
-        `Estimated Balance: \`${formatMoney(estimatedBalance)}\``
+        `Date: \`${result.date}\``,
+        `Current Balance: \`${formatMoney(result.currentBalance)}\``,
+        `Estimated Balance: \`${formatMoney(result.estimatedBalance)}\``
       ].join("\n"),
       { parse_mode: "Markdown" }
     );
   }
 
   function sendForecast(chatId) {
-    const checking = db.prepare(`
-      SELECT id
-      FROM accounts
-      WHERE name = 'assets:bank'
-    `).get();
+    const result = forecastQueryService.getForecastWindow(db, simulateCashflow, 30);
 
-    if (!checking) {
-      return bot.sendMessage(chatId, "Checking account `assets:bank` not found.", {
-        parse_mode: "Markdown"
-      });
-    }
-
-    const row = db.prepare(`
-      SELECT IFNULL(SUM(amount), 0) as balance
-      FROM postings
-      WHERE account_id = ?
-    `).get(checking.id);
-
-    const currentBalance = Number(row?.balance) || 0;
-    const result = simulateCashflow(db, currentBalance, checking.id, 30);
-    const timeline = Array.isArray(result?.timeline) ? result.timeline : [];
-    const lowest = Number(result?.lowestBalance) || currentBalance;
-
-    let firstNegativeDate = null;
-    for (const evt of timeline) {
-      const b = Number(evt.balance) || 0;
-      if (b < 0) {
-        firstNegativeDate = evt.date;
-        break;
-      }
+    if (!result.ok) {
+      return bot.sendMessage(chatId, result.error, { parse_mode: "Markdown" });
     }
 
     const message = [
       "📈 *30-Day Forecast*",
       "",
-      `Current Balance: \`${formatMoney(currentBalance)}\``,
-      `Projected Lowest Balance: \`${formatMoney(lowest)}\``
+      `Current Balance: \`${formatMoney(result.currentBalance)}\``,
+      `Projected Lowest Balance: \`${formatMoney(result.lowestBalance)}\``
     ];
 
-    if (firstNegativeDate) {
-      message.push(`First Negative Date: \`${firstNegativeDate}\``);
+    if (result.firstNegativeDate) {
+      message.push(`First Negative Date: \`${result.firstNegativeDate}\``);
       message.push("");
       message.push("⚠️ Overdraft risk detected in the next 30 days.");
     } else {
@@ -642,36 +527,21 @@ DATE RULE:
   }
 
   function sendWhy(chatId) {
-    const checking = db.prepare(`
-      SELECT id
-      FROM accounts
-      WHERE name = 'assets:bank'
-    `).get();
+    const result = forecastQueryService.getWhyData(db, simulateCashflow, 30);
 
-    if (!checking) {
-      return bot.sendMessage(chatId, "Checking account not found.");
+    if (!result.ok) {
+      return bot.sendMessage(chatId, result.error);
     }
 
-    const balanceRow = db.prepare(`
-      SELECT IFNULL(SUM(amount),0) as balance
-      FROM postings
-      WHERE account_id = ?
-    `).get(checking.id);
-
-    const currentBalance = Number(balanceRow?.balance) || 0;
-    const sim = simulateCashflow(db, currentBalance, checking.id, 30);
-    const timeline = Array.isArray(sim?.timeline) ? sim.timeline : [];
-    const lowest = Number(sim?.lowestBalance) || currentBalance;
-
-    if (!timeline.length) {
+    if (result.noEvents) {
       return bot.sendMessage(
         chatId,
         [
           "🧠 *Why Your Balance Drops*",
           "",
           codeBlock([
-            `Lowest Balance   ${formatMoney(currentBalance)}`,
-            `Date             ${todayYMD()}`,
+            `Lowest Balance   ${formatMoney(result.lowestBalance)}`,
+            `Date             ${result.lowestDate}`,
             "",
             "Main Causes",
             "No upcoming recurring events were found in the forecast window.",
@@ -682,23 +552,15 @@ DATE RULE:
       );
     }
 
-    let lowestDate = null;
-    for (const e of timeline) {
-      if (Number(e.balance) === lowest) {
-        lowestDate = parseLocalDate(e.date);
-        break;
-      }
-    }
-
-    if (!lowestDate) {
+    if (result.noLowerEvent) {
       return bot.sendMessage(
         chatId,
         [
           "🧠 *Why Your Balance Drops*",
           "",
           codeBlock([
-            `Lowest Balance   ${formatMoney(lowest)}`,
-            `Date             ${todayYMD()}`,
+            `Lowest Balance   ${formatMoney(result.lowestBalance)}`,
+            `Date             ${result.lowestDate}`,
             "",
             "Main Causes",
             "No future event drops your balance below where it is today.",
@@ -709,21 +571,7 @@ DATE RULE:
       );
     }
 
-    const causes = [];
-    for (const e of timeline) {
-      const d = parseLocalDate(e.date);
-      const amt = Number(e.amount) || 0;
-
-      if (d && d <= lowestDate && amt < 0) {
-        causes.push({
-          description: e.description || "expense",
-          amount: Math.abs(amt)
-        });
-      }
-    }
-
-    causes.sort((a, b) => b.amount - a.amount);
-    const top = causes.slice(0, 5);
+    const top = result.causes.slice(0, 5);
 
     if (!top.length) {
       return bot.sendMessage(
@@ -732,8 +580,8 @@ DATE RULE:
           "🧠 *Why Your Balance Drops*",
           "",
           codeBlock([
-            `Lowest Balance   ${formatMoney(lowest)}`,
-            `Date             ${lowestDate.toISOString().slice(0, 10)}`,
+            `Lowest Balance   ${formatMoney(result.lowestBalance)}`,
+            `Date             ${result.lowestDate}`,
             "",
             "Main Causes",
             "No expense events were found before the low point."
@@ -753,8 +601,8 @@ DATE RULE:
         "🧠 *Why Your Balance Drops*",
         "",
         codeBlock([
-          `Lowest Balance   ${formatMoney(lowest)}`,
-          `Date             ${lowestDate.toISOString().slice(0, 10)}`,
+          `Lowest Balance   ${formatMoney(result.lowestBalance)}`,
+          `Date             ${result.lowestDate}`,
           "",
           "Main Causes",
           ...lines
@@ -880,65 +728,29 @@ DATE RULE:
   }
 
   function sendUntilPayday(chatId) {
-    const checking = db.prepare(`
-      SELECT id
-      FROM accounts
-      WHERE name = 'assets:bank'
-    `).get();
+    const result = forecastQueryService.getUntilPaydayData(db, simulateCashflow);
 
-    if (!checking) {
-      return bot.sendMessage(chatId, "Checking account not found.");
+    if (!result.ok) {
+      return bot.sendMessage(chatId, result.error);
     }
 
-    const balanceRow = db.prepare(`
-      SELECT IFNULL(SUM(amount),0) as balance
-      FROM postings
-      WHERE account_id = ?
-    `).get(checking.id);
-
-    const currentBalance = Number(balanceRow?.balance) || 0;
-    const sim = simulateCashflow(db, currentBalance, checking.id, 30);
-    const lowestBeforePay = Number(sim?.lowestBalance) || currentBalance;
-
-    const rows = db.prepare(`
-      SELECT id, description, next_due_date, postings_json
-      FROM recurring_transactions
-      ORDER BY date(next_due_date) ASC, id ASC
-    `).all();
-
-    const incomeRows = rows.filter((row) => {
-      try {
-        const postings = JSON.parse(row.postings_json);
-        const bankLine = Array.isArray(postings)
-          ? postings.find((p) => p.account === "assets:bank")
-          : null;
-        return bankLine && (Number(bankLine.amount) || 0) > 0;
-      } catch (_) {
-        return false;
-      }
-    });
-
-    let nextPayday = null;
-    if (incomeRows.length) {
-      nextPayday = String(incomeRows[0].next_due_date || "");
-    }
-
-    const safe = lowestBeforePay >= 0;
     const lines = [
       "💵 *Until Payday*",
       "",
-      `Current Balance: \`${formatMoney(currentBalance)}\``,
-      `Lowest Before Payday: \`${formatMoney(lowestBeforePay)}\``
+      `Current Balance: \`${formatMoney(result.currentBalance)}\``,
+      `Lowest Before Payday: \`${formatMoney(result.lowestBeforePayday)}\``
     ];
 
-    if (nextPayday) {
-      lines.push(`Next Payday: \`${nextPayday}\``);
+    if (result.nextPayday) {
+      lines.push(`Next Payday: \`${result.nextPayday}\``);
     }
 
     lines.push("");
-    lines.push(safe
-      ? "✅ You look safe until payday based on current recurring items."
-      : "⚠️ You may dip below zero before payday.");
+    lines.push(
+      result.safe
+        ? "✅ You look safe until payday based on current recurring items."
+        : "⚠️ You may dip below zero before payday."
+    );
 
     return bot.sendMessage(chatId, lines.join("\n"), {
       parse_mode: "Markdown"
@@ -1060,33 +872,10 @@ DATE RULE:
   }
 
   function sendLowestBalance(chatId) {
-    const checking = db.prepare(`
-      SELECT id
-      FROM accounts
-      WHERE name = 'assets:bank'
-    `).get();
+    const result = forecastQueryService.getForecastWindow(db, simulateCashflow, 30);
 
-    if (!checking) {
-      return bot.sendMessage(chatId, "Checking account not found.");
-    }
-
-    const balanceRow = db.prepare(`
-      SELECT IFNULL(SUM(amount),0) as balance
-      FROM postings
-      WHERE account_id = ?
-    `).get(checking.id);
-
-    const currentBalance = Number(balanceRow?.balance) || 0;
-    const sim = simulateCashflow(db, currentBalance, checking.id, 30);
-    const timeline = Array.isArray(sim?.timeline) ? sim.timeline : [];
-    const lowest = Number(sim?.lowestBalance) || currentBalance;
-
-    let lowestDate = todayYMD();
-    for (const e of timeline) {
-      if (Number(e.balance) === lowest) {
-        lowestDate = String(e.date || lowestDate);
-        break;
-      }
+    if (!result.ok) {
+      return bot.sendMessage(chatId, result.error);
     }
 
     return bot.sendMessage(
@@ -1094,8 +883,8 @@ DATE RULE:
       [
         "📉 *Lowest Balance*",
         "",
-        `Projected Lowest Balance: \`${formatMoney(lowest)}\``,
-        `Date: \`${lowestDate}\``
+        `Projected Lowest Balance: \`${formatMoney(result.lowestBalance)}\``,
+        `Date: \`${result.lowestDate}\``
       ].join("\n"),
       { parse_mode: "Markdown" }
     );
