@@ -1,6 +1,6 @@
 // handlers/balance.js
 module.exports = function registerBalanceHandler(bot, deps) {
-  const { db, format } = deps;
+  const { format, queryService } = deps;
   const { formatMoney } = format;
 
   function renderHelp() {
@@ -47,23 +47,11 @@ module.exports = function registerBalanceHandler(bot, deps) {
     }
 
     try {
-      const checking = db
-        .prepare(`SELECT id FROM accounts WHERE name = 'assets:bank'`)
-        .get();
+      const result = queryService.getCurrentBankBalance(deps.db);
 
-      if (!checking) {
-        return bot.sendMessage(chatId, "assets:bank account not found.");
+      if (!result.ok) {
+        return bot.sendMessage(chatId, result.error);
       }
-
-      const row = db
-        .prepare(`
-          SELECT IFNULL(SUM(amount), 0) AS balance
-          FROM postings
-          WHERE account_id = ?
-        `)
-        .get(checking.id);
-
-      const balance = Number(row?.balance) || 0;
 
       return bot.sendMessage(
         chatId,
@@ -71,8 +59,8 @@ module.exports = function registerBalanceHandler(bot, deps) {
           "💰 <b>Current Balance</b>",
           "",
           "<pre>" + [
-            `Account  assets:bank`,
-            `Balance  ${formatMoney(balance)}`
+            `Account  ${result.account.name}`,
+            `Balance  ${formatMoney(result.balance)}`
           ].join("\n") + "</pre>"
         ].join("\n"),
         { parse_mode: "HTML" }

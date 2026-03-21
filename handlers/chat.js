@@ -1,6 +1,6 @@
 // handlers/chat.js
 module.exports = function registerChatHandler(bot, deps) {
-  const { openai, ledgerService, db, format, simulateCashflow, finance } = deps;
+  const { openai, ledgerService, db, format, simulateCashflow, finance, queryService } = deps;
   const { formatMoney, renderTable, codeBlock } = format;
   const {
     getStartingAssets,
@@ -302,23 +302,11 @@ DATE RULE:
   }
 
   function sendBalance(chatId) {
-    const checking = db
-      .prepare(`SELECT id FROM accounts WHERE name = 'assets:bank'`)
-      .get();
+    const result = queryService.getCurrentBankBalance(db);
 
-    if (!checking) {
-      return bot.sendMessage(chatId, "assets:bank account not found.");
+    if (!result.ok) {
+      return bot.sendMessage(chatId, result.error);
     }
-
-    const row = db
-      .prepare(`
-        SELECT IFNULL(SUM(amount), 0) AS balance
-        FROM postings
-        WHERE account_id = ?
-      `)
-      .get(checking.id);
-
-    const balance = Number(row?.balance) || 0;
 
     return bot.sendMessage(
       chatId,
@@ -327,7 +315,7 @@ DATE RULE:
         "",
         renderTable(
           ["Account", "Balance"],
-          [["assets:bank", formatMoney(balance)]],
+          [[result.account.name, formatMoney(result.balance)]],
           { aligns: ["left", "right"] }
         )
       ].join("\n"),
@@ -336,33 +324,19 @@ DATE RULE:
   }
 
   function sendDebts(chatId) {
-    const rows = db.prepare(`
-      SELECT id, name, balance, apr, minimum
-      FROM debts
-      ORDER BY id ASC
-    `).all();
+    const result = queryService.getDebtSummary(db);
 
-    if (!rows.length) {
+    if (!result.debts.length) {
       return bot.sendMessage(chatId, "No debts recorded.");
     }
 
-    const tableRows = rows.map((row) => [
-      String(row.id),
-      String(row.name || ""),
-      formatMoney(Number(row.balance) || 0),
-      `${(Number(row.apr) || 0).toFixed(2)}%`,
-      formatMoney(Number(row.minimum) || 0)
+    const tableRows = result.debts.map((debt) => [
+      String(debt.id),
+      debt.name,
+      formatMoney(debt.balance),
+      `${debt.apr.toFixed(2)}%`,
+      formatMoney(debt.minimum)
     ]);
-
-    const totalDebt = rows.reduce(
-      (sum, row) => sum + (Number(row.balance) || 0),
-      0
-    );
-
-    const totalMinimum = rows.reduce(
-      (sum, row) => sum + (Number(row.minimum) || 0),
-      0
-    );
 
     return bot.sendMessage(
       chatId,
@@ -374,54 +348,29 @@ DATE RULE:
           tableRows,
           { aligns: ["right", "left", "right", "right", "right"] }
         ),
-        `Total Debt: \`${formatMoney(totalDebt)}\``,
-        `Total Minimums: \`${formatMoney(totalMinimum)}\``
+        `Total Debt: \`${formatMoney(result.totalDebt)}\``,
+        `Total Minimums: \`${formatMoney(result.totalMinimum)}\``
       ].join("\n"),
       { parse_mode: "Markdown" }
     );
   }
 
   function sendRecurring(chatId) {
-    const rows = db.prepare(`
-      SELECT id, hash, description, postings_json, frequency, next_due_date
-      FROM recurring_transactions
-      ORDER BY date(next_due_date) ASC, id ASC
-      LIMIT 25
-    `).all();
+    const result = queryService.getRecurringItems(db, 25);
 
-    if (!rows.length) {
+    if (!result.items.length) {
       return bot.sendMessage(chatId, "No recurring items saved.");
     }
 
-    const tableRows = rows.map((row) => {
-      let amount = 0;
-      let direction = "unknown";
-
-      try {
-        const postings = JSON.parse(row.postings_json);
-        const bankLine = Array.isArray(postings)
-          ? postings.find((p) => p.account === "assets:bank")
-          : null;
-
-        if (bankLine) {
-          const bankAmt = Number(bankLine.amount) || 0;
-          amount = Math.abs(bankAmt);
-          direction = bankAmt >= 0 ? "income" : "bill";
-        }
-      } catch (_) {
-        // ignore malformed postings_json
-      }
-
-      return [
-        String(row.id),
-        String(row.hash || "").slice(0, 6),
-        String(row.description || ""),
-        formatMoney(amount),
-        String(row.frequency || ""),
-        String(row.next_due_date || ""),
-        direction
-      ];
-    });
+    const tableRows = result.items.map((item) => [
+      String(item.id),
+      item.ref,
+      item.description,
+      formatMoney(item.amount),
+      item.frequency,
+      item.nextDue,
+      item.type
+    ]);
 
     return bot.sendMessage(
       chatId,
@@ -439,34 +388,18 @@ DATE RULE:
   }
 
   function sendSummary(chatId) {
-    const rows = db.prepare(`
-      SELECT a.name as account,
-             SUM(p.amount) as total
-      FROM postings p
-      JOIN accounts a ON p.account_id = a.id
-      JOIN transactions t ON p.transaction_id = t.id
-      WHERE a.name LIKE 'expenses:%'
-        AND date(t.date) >= date('now','-30 day')
-      GROUP BY a.name
-      ORDER BY total DESC
-    `).all();
+    const result = queryService.getSpendingSummary(db, 30);
 
-    if (!rows.length) {
+    if (!result.categories.length) {
       return bot.sendMessage(chatId, "📊 30-Day Spending Summary\n\nNo expenses recorded.");
     }
 
-    let total = 0;
-    const tableRows = [];
+    const tableRows = result.categories.map((c) => [
+      c.category,
+      formatMoney(c.amount)
+    ]);
 
-    for (const r of rows) {
-      const amt = Math.abs(Number(r.total) || 0);
-      total += amt;
-
-      const name = String(r.account || "").replace("expenses:", "");
-      tableRows.push([name, formatMoney(amt)]);
-    }
-
-    tableRows.push(["Total", formatMoney(total)]);
+    tableRows.push(["Total", formatMoney(result.total)]);
 
     return bot.sendMessage(
       chatId,
@@ -483,16 +416,16 @@ DATE RULE:
     );
   }
 
-  function sendBalanceOn(chatId, rawDate) {
-    const targetDate = parseYMD(rawDate);
+    function sendBalanceOn(chatId, rawDate) {
+      const targetDate = parseYMD(rawDate);
 
-    if (!targetDate) {
-      return bot.sendMessage(
-        chatId,
-        "Please use a date like `2026-04-03`.",
-        { parse_mode: "Markdown" }
-      );
-    }
+      if (!targetDate) {
+        return bot.sendMessage(
+          chatId,
+          "Please use a date like `2026-04-03`.",
+          { parse_mode: "Markdown" }
+        );
+      }
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
