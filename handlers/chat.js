@@ -248,6 +248,32 @@ DATE RULE:
       text === "what's my next paycheck date";
   }
 
+  function wantsCashflow(text) {
+    return text === "whats my cashflow?" ||
+      text === "whats my cashflow" ||
+      text === "what's my cashflow?" ||
+      text === "what's my cashflow" ||
+      text === "show my cashflow" ||
+      text === "what is my cashflow?" ||
+      text === "what is my cashflow" ||
+      text === "whats my monthly cashflow?" ||
+      text === "whats my monthly cashflow" ||
+      text === "what's my monthly cashflow?" ||
+      text === "what's my monthly cashflow" ||
+      text === "show my monthly cashflow";
+  }
+
+  function wantsUntilPayday(text) {
+    return text === "am i safe until payday?" ||
+      text === "am i safe until payday" ||
+      text === "will i make it to payday?" ||
+      text === "will i make it to payday" ||
+      text === "can i make it to payday?" ||
+      text === "can i make it to payday" ||
+      text === "will i make it until payday?" ||
+      text === "will i make it until payday";
+  }
+
   function sendBalance(chatId) {
     const checking = db
       .prepare(`SELECT id FROM accounts WHERE name = 'assets:bank'`)
@@ -868,6 +894,98 @@ DATE RULE:
     );
   }
 
+  function sendCashflow(chatId) {
+    if (!getRecurringMonthlyNet) {
+      return bot.sendMessage(chatId, "Cashflow helper not available.");
+    }
+
+    const recurring = getRecurringMonthlyNet(db);
+    const income = Number(recurring?.income) || 0;
+    const bills = Number(recurring?.bills) || 0;
+    const net = Number(recurring?.net) || 0;
+
+    return bot.sendMessage(
+      chatId,
+      [
+        "🧾 *Monthly Cashflow*",
+        "",
+        codeBlock([
+          `Income  ${formatMoney(income)}`,
+          `Bills   ${formatMoney(bills)}`,
+          `Net     ${net >= 0 ? "+" : "-"}${formatMoney(Math.abs(net))}`
+        ].join("\n"))
+      ].join("\n"),
+      { parse_mode: "Markdown" }
+    );
+  }
+
+  function sendUntilPayday(chatId) {
+    const checking = db.prepare(`
+      SELECT id
+      FROM accounts
+      WHERE name = 'assets:bank'
+    `).get();
+
+    if (!checking) {
+      return bot.sendMessage(chatId, "Checking account not found.");
+    }
+
+    const balanceRow = db.prepare(`
+      SELECT IFNULL(SUM(amount),0) as balance
+      FROM postings
+      WHERE account_id = ?
+    `).get(checking.id);
+
+    const currentBalance = Number(balanceRow?.balance) || 0;
+    const sim = simulateCashflow(db, currentBalance, checking.id, 30);
+    const timeline = Array.isArray(sim?.timeline) ? sim.timeline : [];
+    const lowestBeforePay = Number(sim?.lowestBalance) || currentBalance;
+
+    const rows = db.prepare(`
+      SELECT id, description, next_due_date, postings_json
+      FROM recurring_transactions
+      ORDER BY date(next_due_date) ASC, id ASC
+    `).all();
+
+    const incomeRows = rows.filter((row) => {
+      try {
+        const postings = JSON.parse(row.postings_json);
+        const bankLine = Array.isArray(postings)
+          ? postings.find((p) => p.account === "assets:bank")
+          : null;
+        return bankLine && (Number(bankLine.amount) || 0) > 0;
+      } catch (_) {
+        return false;
+      }
+    });
+
+    let nextPayday = null;
+    if (incomeRows.length) {
+      nextPayday = String(incomeRows[0].next_due_date || "");
+    }
+
+    const safe = lowestBeforePay >= 0;
+    const lines = [
+      "💵 *Until Payday*",
+      "",
+      `Current Balance: \`${formatMoney(currentBalance)}\``,
+      `Lowest Before Payday: \`${formatMoney(lowestBeforePay)}\``
+    ];
+
+    if (nextPayday) {
+      lines.push(`Next Payday: \`${nextPayday}\``);
+    }
+
+    lines.push("");
+    lines.push(safe
+      ? "✅ You look safe until payday based on current recurring items."
+      : "⚠️ You may dip below zero before payday.");
+
+    return bot.sendMessage(chatId, lines.join("\n"), {
+      parse_mode: "Markdown"
+    });
+  }
+
   bot.on("message", async (msg) => {
     try {
       if (!msg?.text) return;
@@ -921,6 +1039,14 @@ DATE RULE:
 
       if (wantsPayday(normalized)) {
         return sendPayday(chatId);
+      }
+
+      if (wantsCashflow(normalized)) {
+        return sendCashflow(chatId);
+      }
+
+      if (wantsUntilPayday(normalized)) {
+        return sendUntilPayday(chatId);
       }
 
       const completion = await openai.chat.completions.create({

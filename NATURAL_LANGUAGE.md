@@ -40,7 +40,6 @@ These natural language prompts are recognized directly in chat without needing s
 - What will my balance be on 2026-04-03
 
 ## Forcast/Overdraft
-
 - What's my forecast
 - Whats my forecast
 - What is my forecast
@@ -50,8 +49,15 @@ These natural language prompts are recognized directly in chat without needing s
 - Am i going to overdraft
 - Do i have overdraft risk
 
-## Miscellaneous
+## Cashflow
+- What’s my cashflow?
+- Show my cashflow
 
+## Until payday
+- What’s my cashflow?
+- Show my cashflow
+
+## Miscellaneous
 - What’s my net worth?
 - What’s my emergency fund?
 - Why does my balance drop?
