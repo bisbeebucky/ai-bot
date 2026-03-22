@@ -14,18 +14,18 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-v1.1.0-blue">
-  <img alt="node" src="https://img.shields.io/badge/node-18%2B-green">
+  <img alt="version" src="https://img.shields.io/badge/version-v1.3.0-blue">
+  <img alt="node" src="https://img.shields.io/badge/node-22%2B-green">
   <img alt="sqlite" src="https://img.shields.io/badge/database-SQLite-lightgrey">
   <img alt="license" src="https://img.shields.io/badge/license-MIT-purple">
   <img alt="platform" src="https://img.shields.io/badge/platform-Telegram-blue">
 </p>
 
-<h3>Stop Overdrafts Before They Happen: Self-Hosted AI Finance Bot for Telegram</h3>
+<h3>Stop overdrafts before they happen: self-hosted AI finance bot for Telegram</h3>
 
 <p>
-Tired of finance apps that only tell you how you already spent your money? I built <strong>Kalverion Bot</strong> to focus on what happens next. 
-Unlike most trackers, this is a self-hosted tool you run on your own infrastructure (like Digital Ocean), giving you total control over your sensitive financial data.
+Tired of finance apps that only tell you how you already spent your money? I built <strong>Kalverion Bot</strong> to focus on what happens next.
+Unlike most trackers, this is a self-hosted tool you run on your own infrastructure (like DigitalOcean), giving you control over your financial data.
 </p>
 
 <p align="center">
@@ -44,19 +44,21 @@ Unlike most trackers, this is a self-hosted tool you run on your own infrastruct
 <h2>🛠 Features</h2>
 
 📉 <b>Overdraft Warnings:</b> Predictive alerts based on upcoming bills and current balance.<br><br>
-🔮 <b>Cashflow Forecasting:</b> Ask "What will my balance be on Friday?" to see your financial future.<br><br>
-💸 <b>Debt Management:</b> Track progress on loans and credit cards with automated payoff planning.<br><br>
-🗣 <b>Natural Language:</b> Powered by OpenClaw—no complex menus, just chat.<br><br>
-🔒 <b>Privacy First:</b> Your financial history stays on your server, not in the cloud.<br><br>
-🦞 <b>Built with OpenClaw</b> backend for AI-powered Telegram interaction
+🔮 <b>Cashflow Forecasting:</b> Ask questions like “What will my balance be on 2026-04-03?” to see your financial future.<br><br>
+💸 <b>Debt Management:</b> Track progress on loans and credit cards with payoff planning tools.<br><br>
+🗣 <b>Natural Language:</b> Powered by OpenClaw and custom handlers—no complex menus, just chat.<br><br>
+🔒 <b>Privacy First:</b> Your financial history stays on your server, not in a third-party finance app.<br><br>
+🦞 <b>Built with OpenClaw:</b> AI-powered Telegram interaction on top of a self-hosted finance bot.
 
 </td>
 </tr>
 </table>
 
 <p align="center">
-  <a href="https://github.com/bisbeebucky/ai-bot"><strong>⭐ Star the repo</strong></a> •
-  <a href="HELP.md"><strong>📖 Commands</strong></a>
+  <a href="HELP.md"><strong>📖 Commands</strong></a> •
+  <a href="NATURAL_LANGUAGE.md"><strong>💬 Natural Language</strong></a> •
+  <a href="INSTALL.md"><strong>⚡ Install</strong></a> •
+  <a href="https://github.com/bisbeebucky/ai-bot"><strong>⭐ Star the repo</strong></a>
 </p>
 
 <hr>
@@ -77,14 +79,14 @@ Unlike most trackers, this is a self-hosted tool you run on your own infrastruct
 <h2>Why I Built This</h2>
 
 <p>
-I started this project after getting hit with <strong>overdraft fees</strong> 
+I started this project after getting hit with <strong>overdraft fees</strong>
 and realizing I did not have a clear picture of my short-term cashflow.
 </p>
 
 <p>
-Most finance apps are good at showing what already happened. This bot focuses on 
-<strong>what will happen next</strong> — forecasting balances, warning about 
-danger windows, tracking recurring expenses, and helping you make better 
+Most finance apps are good at showing what already happened. This bot focuses on
+<strong>what will happen next</strong> — forecasting balances, warning about
+danger windows, tracking recurring expenses, and helping you make better
 decisions before problems happen.
 </p>
 
@@ -113,18 +115,27 @@ npm install
 export OPENAI_API_KEY=YOUR_KEY
 </code></pre>
 
+<p>
+Note: if you use OpenRouter through the OpenAI-compatible client, the project may still use the
+<code>OPENAI_API_KEY</code> environment variable name.
+</p>
+
 <h3>3. Start the bot</h3>
 
 <pre><code>node index.js
 </code></pre>
+
+<p>
+For DigitalOcean / OpenClaw deployment notes, see <a href="INSTALL.md"><strong>INSTALL.md</strong></a>.
+</p>
 
 <hr>
 
 <h2>🔗 Pairing Telegram with OpenClaw</h2>
 
 <p>
-OpenClaw can connect your Telegram bot without pairing.<br>
-All you need is your telegram token in ecosystem.config.cjs.
+OpenClaw can connect your Telegram bot without pairing in some setups.<br>
+In the current deployment flow, the important piece is making your Telegram token available to the runtime, often through <code>ecosystem.config.cjs</code>.
 </p>
 
 <hr>
@@ -132,7 +143,7 @@ All you need is your telegram token in ecosystem.config.cjs.
 <h2>💬 Natural Language Transactions</h2>
 
 <p>
-The bot can interpret plain English messages and convert them into balanced 
+The bot can interpret plain English messages and convert them into balanced
 double-entry ledger transactions.
 </p>
 
@@ -141,6 +152,11 @@ bought groceries for 35
 paid rent 1200
 5 on coffee
 </code></pre>
+
+<p>
+It also supports read-only natural-language shortcuts for common finance questions.
+See <a href="NATURAL_LANGUAGE.md"><strong>NATURAL_LANGUAGE.md</strong></a>.
+</p>
 
 <hr>
 
@@ -163,11 +179,34 @@ The bot warns you <strong>before an overdraft occurs</strong>.
 
 <hr>
 
+<h2>Release</h2>
+
+<p>
+Current release: <strong>v1.3.0</strong>
+</p>
+
+<h3>Highlights in v1.3.0</h3>
+
+<ul>
+  <li>Added natural-language read-only prompts for common finance questions</li>
+  <li>Refactored shared query logic into service layers</li>
+  <li>Added shared forecast and recurring query services</li>
+  <li>Added automated tests for query, forecast, recurring, and simulation logic</li>
+</ul>
+
+<p>
+See <a href="RELEASE.md"><strong>RELEASE.md</strong></a> for release history.
+</p>
+
+<hr>
+
 <p align="center">
 ⭐ If this project helps you manage your finances or avoid overdrafts, consider giving it a star.
 </p>
 
 <p align="center">
-  <a href="HELP.md"><strong>📖 Commands</strong></a> • 
+  <a href="HELP.md"><strong>📖 Commands</strong></a> •
+  <a href="NATURAL_LANGUAGE.md"><strong>💬 Natural Language</strong></a> •
+  <a href="RELEASE.md"><strong>🏷 Release Notes</strong></a> •
   <a href="https://github.com/bisbeebucky/ai-bot"><strong>⭐ Star the repo</strong></a>
 </p>
