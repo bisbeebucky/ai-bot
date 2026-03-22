@@ -185,7 +185,7 @@ module.exports = function registerAutopilotHandler(bot, deps) {
           "The stretch before your next income is the danger zone. Focus on staying above zero."
         );
 
-        lines.push(...formatNextCommands(["/untilpayday", "/why", "/caniafford"]));
+        lines.push(...formatNextCommands(["/untilpayday", "/why", "/whatif"]));
       } else if (lowest < 100) {
         lines.push(
           "You are still okay, but your buffer is thin.",
@@ -199,7 +199,7 @@ module.exports = function registerAutopilotHandler(bot, deps) {
           "One surprise expense could turn this into an overdraft risk."
         );
 
-        lines.push(...formatNextCommands(["/untilpayday", "/why", "/caniafford"]));
+        lines.push(...formatNextCommands(["/untilpayday", "/why", "/whatif"]));
       } else if (debtTotal > 0 && monthlyNet > 0) {
         if (targetDebt && recommendedExtra) {
           lines.push(

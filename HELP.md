@@ -45,7 +45,6 @@ These commands answer the most common financial questions quickly.
 | Why does my balance dip? | `/why` |
 | What should I focus on right now? | `/focus` |
 | What does the bot recommend I do next? | `/autopilot` |
-| Can I afford this purchase? | `/caniafford 150` |
 | What will my balance look like soon? | `/forecast_graph` |
 
 ---
@@ -91,7 +90,6 @@ These commands answer the most common financial questions quickly.
 |---------|-------------|---------|
 | `/focus` | Compact current financial priority | `/focus` |
 | `/autopilot` | Full recommendation with why, do now, and watch next | `/autopilot` |
-| `/caniafford` | Check if a purchase is safe | `/caniafford 1500` |
 | `/financial_health` | Financial scorecard with health label, drag, and focus | `/financial_health` |
 | `/emergency_fund` | Emergency fund target analysis | `/emergency_fund` |
 | `/goal` | Savings goal calculator | `/goal 5000` |
