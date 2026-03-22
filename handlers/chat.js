@@ -8,7 +8,8 @@ module.exports = function registerChatHandler(bot, deps) {
     simulateCashflow,
     finance,
     queryService,
-    forecastQueryService
+    forecastQueryService,
+    recurringQueryService
   } = deps;
 
   const { formatMoney, renderTable, codeBlock } = format;
@@ -321,7 +322,7 @@ DATE RULE:
   }
 
   function sendRecurring(chatId) {
-    const result = queryService.getRecurringItems(db, 25);
+    const result = recurringQueryService.getRecurringItems(db, 25);
 
     if (!result.items.length) {
       return bot.sendMessage(chatId, "No recurring items saved.");
@@ -613,43 +614,18 @@ DATE RULE:
   }
 
   function sendDueNext(chatId) {
-    const rows = db.prepare(`
-      SELECT id, hash, description, frequency, next_due_date, postings_json
-      FROM recurring_transactions
-      ORDER BY date(next_due_date) ASC, id ASC
-      LIMIT 5
-    `).all();
+    const result = recurringQueryService.getDueNext(db, 5);
 
-    if (!rows.length) {
+    if (!result.items.length) {
       return bot.sendMessage(chatId, "No recurring items saved.");
     }
 
-    const tableRows = rows.map((row) => {
-      let amount = 0;
-      let direction = "unknown";
-
-      try {
-        const postings = JSON.parse(row.postings_json);
-        const bankLine = Array.isArray(postings)
-          ? postings.find((p) => p.account === "assets:bank")
-          : null;
-
-        if (bankLine) {
-          const bankAmt = Number(bankLine.amount) || 0;
-          amount = Math.abs(bankAmt);
-          direction = bankAmt >= 0 ? "income" : "bill";
-        }
-      } catch (_) {
-        // ignore malformed postings_json
-      }
-
-      return [
-        String(row.next_due_date || ""),
-        String(row.description || ""),
-        formatMoney(amount),
-        direction
-      ];
-    });
+    const tableRows = result.items.map((item) => [
+      item.nextDue,
+      item.description,
+      formatMoney(item.amount),
+      item.type
+    ]);
 
     return bot.sendMessage(
       chatId,
@@ -667,36 +643,19 @@ DATE RULE:
   }
 
   function sendPayday(chatId) {
-    const rows = db.prepare(`
-      SELECT id, hash, description, frequency, next_due_date, postings_json
-      FROM recurring_transactions
-      ORDER BY date(next_due_date) ASC, id ASC
-    `).all();
+    const result = recurringQueryService.getNextPayday(db);
 
-    const incomeRows = rows.filter((row) => {
-      try {
-        const postings = JSON.parse(row.postings_json);
-        const bankLine = Array.isArray(postings)
-          ? postings.find((p) => p.account === "assets:bank")
-          : null;
-        return bankLine && (Number(bankLine.amount) || 0) > 0;
-      } catch (_) {
-        return false;
-      }
-    });
-
-    if (!incomeRows.length) {
+    if (!result.item) {
       return bot.sendMessage(chatId, "No recurring income items found.");
     }
 
-    const next = incomeRows[0];
     return bot.sendMessage(
       chatId,
       [
         "💵 *Next Payday*",
         "",
-        `Description: \`${String(next.description || "")}\``,
-        `Next Date: \`${String(next.next_due_date || "")}\``
+        `Description: \`${result.item.description}\``,
+        `Next Date: \`${result.item.nextDue}\``
       ].join("\n"),
       { parse_mode: "Markdown" }
     );
@@ -758,46 +717,17 @@ DATE RULE:
   }
 
   function sendUpcomingIncome(chatId) {
-    const rows = db.prepare(`
-      SELECT id, description, next_due_date, postings_json
-      FROM recurring_transactions
-      ORDER BY date(next_due_date) ASC, id ASC
-    `).all();
+    const result = recurringQueryService.getUpcomingIncome(db, 5);
 
-    const incomeRows = rows.filter((row) => {
-      try {
-        const postings = JSON.parse(row.postings_json);
-        const bankLine = Array.isArray(postings)
-          ? postings.find((p) => p.account === "assets:bank")
-          : null;
-        return bankLine && (Number(bankLine.amount) || 0) > 0;
-      } catch (_) {
-        return false;
-      }
-    });
-
-    if (!incomeRows.length) {
+    if (!result.items.length) {
       return bot.sendMessage(chatId, "No recurring income items found.");
     }
 
-    const tableRows = incomeRows.slice(0, 5).map((row) => {
-      let amount = 0;
-      try {
-        const postings = JSON.parse(row.postings_json);
-        const bankLine = Array.isArray(postings)
-          ? postings.find((p) => p.account === "assets:bank")
-          : null;
-        amount = Math.abs(Number(bankLine?.amount) || 0);
-      } catch (_) {
-        amount = 0;
-      }
-
-      return [
-        String(row.next_due_date || ""),
-        String(row.description || ""),
-        formatMoney(amount)
-      ];
-    });
+    const tableRows = result.items.map((item) => [
+      item.nextDue,
+      item.description,
+      formatMoney(item.amount)
+    ]);
 
     return bot.sendMessage(
       chatId,
@@ -815,46 +745,17 @@ DATE RULE:
   }
 
   function sendUpcomingBills(chatId) {
-    const rows = db.prepare(`
-      SELECT id, description, next_due_date, postings_json
-      FROM recurring_transactions
-      ORDER BY date(next_due_date) ASC, id ASC
-    `).all();
+    const result = recurringQueryService.getUpcomingBills(db, 5);
 
-    const billRows = rows.filter((row) => {
-      try {
-        const postings = JSON.parse(row.postings_json);
-        const bankLine = Array.isArray(postings)
-          ? postings.find((p) => p.account === "assets:bank")
-          : null;
-        return bankLine && (Number(bankLine.amount) || 0) < 0;
-      } catch (_) {
-        return false;
-      }
-    });
-
-    if (!billRows.length) {
+    if (!result.items.length) {
       return bot.sendMessage(chatId, "No recurring bills found.");
     }
 
-    const tableRows = billRows.slice(0, 5).map((row) => {
-      let amount = 0;
-      try {
-        const postings = JSON.parse(row.postings_json);
-        const bankLine = Array.isArray(postings)
-          ? postings.find((p) => p.account === "assets:bank")
-          : null;
-        amount = Math.abs(Number(bankLine?.amount) || 0);
-      } catch (_) {
-        amount = 0;
-      }
-
-      return [
-        String(row.next_due_date || ""),
-        String(row.description || ""),
-        formatMoney(amount)
-      ];
-    });
+    const tableRows = result.items.map((item) => [
+      item.nextDue,
+      item.description,
+      formatMoney(item.amount)
+    ]);
 
     return bot.sendMessage(
       chatId,

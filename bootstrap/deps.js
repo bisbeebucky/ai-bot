@@ -17,6 +17,7 @@ const debtProjection = require("../services/debt_projection");
 
 const queryService = require("../services/queryService");
 const forecastQueryService = require("../services/forecastQueryService");
+const recurringQueryService = require("../services/recurringQueryService");
 
 module.exports = function createDeps(db, openai) {
   const ledgerService = createLedgerService(db);
@@ -42,7 +43,8 @@ module.exports = function createDeps(db, openai) {
     debt,
     debtProjection,
     queryService,
-    forecastQueryService
+    forecastQueryService,
+    recurringQueryService
   };
 
   return Object.freeze(deps);
