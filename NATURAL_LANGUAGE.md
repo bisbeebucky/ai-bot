@@ -1,7 +1,10 @@
-# NATURAL LANGUAGE
+# NATURAL LANGUAGE SHORTCUTS
 
-These natural language prompts are recognized directly in chat without needing slash commands.
-They are also read-only convenience prompts, while transaction entry still works best with explicit commands or clear transaction text.
+These prompts are recognized directly in chat without needing slash commands.
+
+These are read-only convenience prompts. Transaction entry still works best with explicit commands or clear transaction text.
+
+Exact capitalization and punctuation do not have to match these examples.
 
 ## Balance
 - What's my balance?
