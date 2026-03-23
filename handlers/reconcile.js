@@ -93,8 +93,8 @@ module.exports = function registerReconcileHandler(bot, deps) {
           parse_mode: "Markdown",
           reply_markup: {
             inline_keyboard: [[
-              { text: "Confirm", callback_data: callbackData },
-              { text: "Cancel", callback_data: `reconcile_cancel|${chatId}` }
+              { text: "✅ Yes, reconcile", callback_data: callbackData },
+              { text: "❌ Cancel", callback_data: `reconcile_cancel|${chatId}` }
             ]]
           }
         }
