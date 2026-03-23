@@ -111,13 +111,14 @@ npm install
 
 <h3>2. Set environment variables</h3>
 
-<pre><code>export TELEGRAM_BOT_TOKEN=YOUR_TOKEN
+<pre><code>
+export TELEGRAM_BOT_TOKEN=YOUR_TOKEN<br>
+export OPENROUTER_API_KEY=YOUR_KEY<br>
 export OPENAI_API_KEY=YOUR_KEY
 </code></pre>
 
 <p>
-Note: if you use OpenRouter through the OpenAI-compatible client, the project may still use the
-<code>OPENAI_API_KEY</code> environment variable name.
+If running on Digital Ocean set these in ecosystem.config.cjs
 </p>
 
 <h3>3. Start the bot</h3>
