@@ -41,18 +41,6 @@ npm install
 
 mv ai-bot ~/.openclaw/workspace
 ```
-
-- Add below the agents section in ~/.openclaw/openclaw.json
-```
-</> JSON
-
-"list": [
-  {
-    "id": "ai-bot",
-    "workspace": "/workspace/ai-bot"
-  }
-]
-```
 - Bashrc env not recoginzed by bot so create ecosystem.config.cjs and add your own tokens
 ```
 </> Bash
