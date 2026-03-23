@@ -87,7 +87,10 @@ cp .openclaw/openclaw.json openclaw.json
           "alias": "OpenRouter"
         }
       },
-      "workspace": "/home/openclaw/.openclaw/workspace"
+      "workspace": "/home/openclaw/.openclaw/workspace",
+      "sandbox": {
+        "mode": "all"
+      }
     }
   },
   "tools": {
