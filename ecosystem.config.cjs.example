@@ -5,9 +5,10 @@ module.exports = {
       script: "index.js",
       cwd: "/home/openclaw/.openclaw/workspace/ai-bot",
       env: {
-        TELEGRAM_BOT_TOKEN: "REPLACE_ME",
-        OPENAI_API_KEY: "REPLACE_ME"
-      }
-    }
-  ]
+        TELEGRAM_BOT_TOKEN: "YOUR_TELEGRAM_TOKEN_GOES_HERE",
+        OPENAI_API_KEY: "YOUR_OPENAI_API_KEY-GOES-HERE",
+        OPENROUTER_API_KEY: "YOUR-OPENROUTER_API_KEY-GOES-HERE",
+      },
+    },
+  ],
 };
