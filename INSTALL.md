@@ -1,12 +1,15 @@
 # INSTALL
 
 ## Prerequisites
+
 - Node.js 22
 - npm
 - PM2
 
 ## Deploy steps
+
 1. Clone the repo:
+
 ```
 </> Bash
 
@@ -15,6 +18,7 @@ cd ai-bot
 ```
 
 2. Install dependencies:
+
 ```
 </> Bash
 
@@ -36,25 +40,31 @@ npm install
 ## Digital Ocean Specifics
 
 - Move the ai-bot directory into the Docker container workspace
+
 ```
 </> Bash
 
 mv ai-bot ~/.openclaw/workspace
 ```
+
 - Bashrc env not recoginzed by bot so create ecosystem.config.cjs and add your own tokens
+
 ```
 </> Bash
 
 mv ~/workspace/ai-bot/ecosystem.config.cjs.example ~/workspace/ai-bot/ecosystem.config.cjs
 ```
+
 - Back up your openclaw.json file
+
 ```
 </> Bash
 
 cp .openclaw/openclaw.json openclaw.json
 ```
 
-- Version v2026.03.13 .openclaw/openclaw.json
+- Version 2026.3.23-2.openclaw/openclaw.json unchanged
+
 ```
 </> JSON
 
