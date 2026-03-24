@@ -131,7 +131,7 @@ cp .openclaw/openclaw.json openclaw.json
   "gateway": {
     "port": 18789,
     "mode": "local",
-    "bind": "lan",
+    "bind": "loopback",
     "controlUi": {
       "enabled": true,
       "allowedOrigins": [
