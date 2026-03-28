@@ -30,8 +30,10 @@ module.exports = function registerOcstatusHandler(bot, deps) {
     try {
       return execSync(cmd, {
         cwd: process.cwd(),
-        stdio: ["ignore", "pipe", "ignore"]
-      }).toString().trim();
+        stdio: ["ignore", "pipe", "ignore"],
+      })
+        .toString()
+        .trim();
     } catch {
       return "unknown";
     }
@@ -50,7 +52,7 @@ module.exports = function registerOcstatusHandler(bot, deps) {
     const candidates = [
       path.join(process.cwd(), "data", "ledger.sqlite"),
       path.join(process.cwd(), "data", "bot.sqlite"),
-      path.join(process.cwd(), "ledger.sqlite")
+      path.join(process.cwd(), "ledger.sqlite"),
     ];
 
     for (const p of candidates) {
@@ -99,18 +101,16 @@ module.exports = function registerOcstatusHandler(bot, deps) {
     if (!s) return "unknown";
     if (s.includes("openclaw")) return "OpenClaw";
     if (s.includes("openrouter")) return "OpenRouter";
-    if (s.includes("localhost") || s.includes("127.0.0.1")) return "local gateway";
+    if (s.includes("localhost") || s.includes("127.0.0.1"))
+      return "local gateway";
     return "custom";
   }
 
   function detectModel() {
-    return envFirst(
-      "OPENAI_MODEL",
-      "OPENROUTER_MODEL",
-      "MODEL",
-      "DEFAULT_MODEL",
-      "LLM_MODEL"
-    ) || "unknown";
+    return (
+      envFirst("OPENROUTER_MODEL", "MODEL", "DEFAULT_MODEL", "LLM_MODEL") ||
+      "unknown"
+    );
   }
 
   function detectBaseUrl() {
@@ -119,7 +119,7 @@ module.exports = function registerOcstatusHandler(bot, deps) {
       "OPENAI_API_BASE",
       "OPENROUTER_BASE_URL",
       "OPENCLAW_BASE_URL",
-      "BASE_URL"
+      "BASE_URL",
     );
   }
 
@@ -128,7 +128,7 @@ module.exports = function registerOcstatusHandler(bot, deps) {
       "OPENAI_API_KEY",
       "OPENROUTER_API_KEY",
       "OPENCLAW_API_KEY",
-      "API_KEY"
+      "API_KEY",
     );
 
     return key ? "set" : "missing";
@@ -147,13 +147,13 @@ module.exports = function registerOcstatusHandler(bot, deps) {
       "",
       "*Notes*",
       "- Detects gateway and model from available environment variables.",
-      "- Database counts include transactions, recurring items, debts, and budgets."
+      "- Database counts include transactions, recurring items, debts, and budgets.",
     ].join("\n");
   }
 
   function sendHelp(chatId) {
     return bot.sendMessage(chatId, renderHelp(), {
-      parse_mode: "Markdown"
+      parse_mode: "Markdown",
     });
   }
 
@@ -172,9 +172,9 @@ module.exports = function registerOcstatusHandler(bot, deps) {
           "The `/ocstatus` command does not take arguments.",
           "",
           "Usage:",
-          "`/ocstatus`"
+          "`/ocstatus`",
         ].join("\n"),
-        { parse_mode: "Markdown" }
+        { parse_mode: "Markdown" },
       );
     }
 
@@ -197,7 +197,9 @@ module.exports = function registerOcstatusHandler(bot, deps) {
       const host = os.hostname();
 
       const txCount = safeCount("SELECT COUNT(*) as count FROM transactions");
-      const recurringCount = safeCount("SELECT COUNT(*) as count FROM recurring_transactions");
+      const recurringCount = safeCount(
+        "SELECT COUNT(*) as count FROM recurring_transactions",
+      );
       const debtCount = safeCount("SELECT COUNT(*) as count FROM debts");
       const budgetCount = safeCount("SELECT COUNT(*) as count FROM budgets");
 
@@ -228,7 +230,7 @@ module.exports = function registerOcstatusHandler(bot, deps) {
       out += "```";
 
       return bot.sendMessage(chatId, out, {
-        parse_mode: "Markdown"
+        parse_mode: "Markdown",
       });
     } catch (err) {
       console.error("ocstatus error:", err);
@@ -240,15 +242,12 @@ module.exports = function registerOcstatusHandler(bot, deps) {
 module.exports.help = {
   command: "ocstatus",
   category: "Runtime",
-  summary: "Show OpenClaw or gateway runtime status, including version, model, base URL, memory, database health, and record counts.",
-  usage: [
-    "/ocstatus"
-  ],
-  examples: [
-    "/ocstatus"
-  ],
+  summary:
+    "Show OpenClaw or gateway runtime status, including version, model, base URL, memory, database health, and record counts.",
+  usage: ["/ocstatus"],
+  examples: ["/ocstatus"],
   notes: [
     "Detects gateway and model from available environment variables.",
-    "Database counts include transactions, recurring items, debts, and budgets."
-  ]
+    "Database counts include transactions, recurring items, debts, and budgets.",
+  ],
 };

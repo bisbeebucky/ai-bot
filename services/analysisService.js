@@ -63,10 +63,7 @@ Provide:
 `;
 
     const completion = await openai.chat.completions.create({
-      model:
-        process.env.OPENAI_MODEL ||
-        process.env.OPENROUTER_MODEL ||
-        "openai/gpt-4o-mini",
+      model: process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
