@@ -3,6 +3,7 @@ const os = require("os");
 const fs = require("fs");
 const path = require("path");
 const { execSync } = require("child_process");
+const { resolveModel } = require("../utils/model");
 
 module.exports = function registerOcstatusHandler(bot, deps) {
   const { db } = deps;
@@ -107,10 +108,7 @@ module.exports = function registerOcstatusHandler(bot, deps) {
   }
 
   function detectModel() {
-    return (
-      envFirst("OPENROUTER_MODEL", "MODEL", "DEFAULT_MODEL", "LLM_MODEL") ||
-      "openai/gpt-4o-mini"
-    );
+    return resolveModel();
   }
 
   function detectBaseUrl() {

@@ -1,3 +1,4 @@
+const { resolveModel } = require("../utils/model");
 // handlers/chat.js
 module.exports = function registerChatHandler(bot, deps) {
   const {
@@ -867,7 +868,7 @@ DATE RULE:
       }
 
       const completion = await openai.chat.completions.create({
-        model: "openai/gpt-4o-mini",
+        model: resolveModel(),
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: rawText }

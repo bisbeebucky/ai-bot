@@ -3,6 +3,7 @@ const {
   getMonthlyCashflow,
   getIncomeStatement,
 } = require("./reportService");
+const { resolveModel } = require("../utils/model");
 
 /**
  * Build structured financial snapshot
@@ -63,7 +64,7 @@ Provide:
 `;
 
     const completion = await openai.chat.completions.create({
-      model: process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini",
+      model: resolveModel(),
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
