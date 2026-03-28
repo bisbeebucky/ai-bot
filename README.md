@@ -114,7 +114,6 @@ npm install
 <pre><code>
 export TELEGRAM_BOT_TOKEN=YOUR_TOKEN<br>
 export OPENROUTER_API_KEY=YOUR_KEY<br>
-export OPENAI_API_KEY=YOUR_KEY
 </code></pre>
 
 <p>
