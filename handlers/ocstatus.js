@@ -109,7 +109,7 @@ module.exports = function registerOcstatusHandler(bot, deps) {
   function detectModel() {
     return (
       envFirst("OPENROUTER_MODEL", "MODEL", "DEFAULT_MODEL", "LLM_MODEL") ||
-      "unknown"
+      "openai/gpt-4o-mini"
     );
   }
 
