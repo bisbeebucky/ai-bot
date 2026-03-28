@@ -21,16 +21,8 @@ function requireEnv(key) {
   }
 }
 
-function requireAnyEnv(keys) {
-  const found = keys.find((k) => process.env[k]);
-  if (!found) {
-    console.error(`${keys.join(" or ")} not set`);
-    process.exit(1);
-  }
-}
-
 requireEnv("TELEGRAM_BOT_TOKEN");
-requireAnyEnv(["OPENROUTER_API_KEY", "OPENAI_API_KEY"]);
+requireEnv("OPENROUTER_API_KEY");
 
 /* =====================================================
    BOOTSTRAP
