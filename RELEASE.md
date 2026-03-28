@@ -135,66 +135,21 @@ This release adds a new transfer command, improves debt listing and deletion wor
 
 ## Future Release Notes
 
-## AI / OpenRouter cleanup
+## AI / model cleanup
 
-This release standardizes AI calls on **OpenRouter only** and removes the old mixed OpenAI/OpenRouter behavior.
+This release standardizes the bot on **OpenRouter only**.
 
-### What changed
+### Changes
 
-- `bootstrap/openai.js`
-  - removed the OpenAI fallback path
-  - now requires `OPENROUTER_API_KEY`
-  - normalizes model names for OpenRouter
-  - continues to use the OpenAI SDK against the OpenRouter base URL
+- removed the old mixed OpenAI/OpenRouter behavior
+- `bootstrap/openai.js` now uses only `OPENROUTER_API_KEY`
+- `index.js` now requires `OPENROUTER_API_KEY`
+- added `utils/model.js` as the single source of truth for model selection
+- updated chat, analysis, and `/ocstatus` to use the shared model resolver
+- added `max_tokens` caps to reduce OpenRouter credit overruns
 
-- `index.js`
-  - startup env validation now requires:
-    - `TELEGRAM_BOT_TOKEN`
-    - `OPENROUTER_API_KEY`
-  - removed the old `OPENAI_API_KEY` requirement
+### Result
 
-- `services/analysisService.js`
-  - continues to use the shared injected AI client
-  - now resolves the model from the shared runtime model helper
-  - keeps a capped `max_tokens` for lower-credit safety
-
-- `handlers/chat.js`
-  - now resolves the model from the shared runtime model helper
-  - keeps a capped `max_tokens` to avoid OpenRouter credit overruns
-
-- `handlers/ocstatus.js`
-  - now reports the same requested runtime model used by the bot
-  - no longer depends on a separate hardcoded model guess
-
-- `utils/model.js`
-  - added as the single source of truth for model resolution
-  - used by chat, analysis, and `/ocstatus`
-
-### Why
-
-Previously, the bot could:
-
-- use different model values in different files
-- show `Model: unknown` in `/ocstatus`
-- fail with generic `AI error` messages when OpenRouter credit limits were hit
-- drift between source-of-truth repos due to inconsistent patches
-
-This release makes model selection consistent across the app and improves behavior when using OpenRouter with limited credits.
-
-### Runtime notes
-
-- Default requested model is currently:
-  - `openai/gpt-4o-mini`
-- Runtime model can be overridden with:
-  - `OPENROUTER_MODEL`
-  - or other supported model env vars resolved by `utils/model.js`
-- PM2 should be restarted with:
-  - `pm2 restart ai-bot --update-env`
-
-### Operator note
-
-If `/ocstatus` and live AI behavior disagree in the future, check:
-
-- `utils/model.js`
-- PM2 environment
-- deployed repo vs source-of-truth repo
+- runtime model selection is now consistent across the bot
+- `/ocstatus` reports the same requested model the bot uses
+- OpenRouter-only deployments are simpler and more predictable
