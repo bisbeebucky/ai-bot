@@ -1,11 +1,8 @@
-const { 
+const {
   getExpenseBreakdown,
   getMonthlyCashflow,
-  getIncomeStatement 
+  getIncomeStatement,
 } = require("./reportService");
-
-const OpenAI = require("openai");
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 /**
  * Build structured financial snapshot
@@ -13,22 +10,16 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 function buildFinancialSnapshot(month) {
   const year = month.substring(0, 4);
 
-  const expenses = getExpenseBreakdown(
-    `${month}-01`,
-    `${month}-31`
-  );
+  const expenses = getExpenseBreakdown(`${month}-01`, `${month}-31`);
 
   const cashflow = getMonthlyCashflow(year);
-  const incomeStatement = getIncomeStatement(
-    `${month}-01`,
-    `${month}-31`
-  );
+  const incomeStatement = getIncomeStatement(`${month}-01`, `${month}-31`);
 
   return {
     month,
     expenses,
     cashflow,
-    incomeStatement
+    incomeStatement,
   };
 }
 
@@ -36,7 +27,7 @@ function calculateSavingsRate(incomeStatement) {
   let income = 0;
   let expenses = 0;
 
-  incomeStatement.forEach(item => {
+  incomeStatement.forEach((item) => {
     if (item.type === "income") income += item.amount;
     if (item.type === "expenses") expenses += Math.abs(item.amount);
   });
@@ -45,13 +36,11 @@ function calculateSavingsRate(incomeStatement) {
   return ((income - expenses) / income) * 100;
 }
 
-/**
- * Ask GPT to analyze spending
- */
-async function analyzeSpending(month) {
-  const snapshot = buildFinancialSnapshot(month);
+function createAnalysisService(openai) {
+  async function analyzeSpending(month) {
+    const snapshot = buildFinancialSnapshot(month);
 
-  const systemPrompt = `
+    const systemPrompt = `
 You are a personal finance analyst.
 You analyze structured financial data.
 You do NOT invent numbers.
@@ -59,7 +48,7 @@ You only use provided data.
 Be concise, practical, and actionable.
 `;
 
-  const userPrompt = `
+    const userPrompt = `
 Analyze the following financial data for ${month}.
 
 Data:
@@ -73,16 +62,25 @@ Provide:
 5. One concrete improvement suggestion
 `;
 
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt }
-    ],
-    temperature: 0.4
-  });
+    const completion = await openai.chat.completions.create({
+      model:
+        process.env.OPENAI_MODEL ||
+        process.env.OPENROUTER_MODEL ||
+        "openai/gpt-4o-mini",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      temperature: 0.4,
+    });
 
-  return completion.choices[0].message.content;
+    return completion.choices[0].message.content;
+  }
+
+  return {
+    analyzeSpending,
+    calculateSavingsRate,
+  };
 }
 
-module.exports = { analyzeSpending };
+module.exports = createAnalysisService;
