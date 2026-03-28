@@ -16,7 +16,8 @@ module.exports = function registerAiMessageHandler({
           { role: "system", content: systemPrompt },
           { role: "user", content: msg.text }
         ],
-        temperature: 0.2
+        temperature: 0.2,
+        max_tokens: 400
       });
 
       const reply = completion.choices[0].message.content.trim();

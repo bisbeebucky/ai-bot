@@ -872,7 +872,8 @@ DATE RULE:
           { role: "system", content: systemPrompt },
           { role: "user", content: rawText }
         ],
-        temperature: 0.2
+        temperature: 0.2,
+        max_tokens: 400
       });
 
       const reply = completion?.choices?.[0]?.message?.content?.trim() || "";

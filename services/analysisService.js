@@ -72,6 +72,7 @@ Provide:
         { role: "user", content: userPrompt },
       ],
       temperature: 0.4,
+      max_tokens: 700,
     });
 
     return completion.choices[0].message.content;
