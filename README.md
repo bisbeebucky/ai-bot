@@ -160,6 +160,52 @@ See <a href="NATURAL_LANGUAGE.md"><strong>NATURAL_LANGUAGE.md</strong></a>.
 
 <hr>
 
+<h2>🧠 How the AI is used</h2>
+
+<p>
+Kalverion_bot uses AI as a <strong>natural-language interpretation and response layer</strong>, not as the source of accounting truth.
+</p>
+
+<p>
+The model helps with things like:
+</p>
+
+<ul>
+  <li>understanding plain-English finance messages</li>
+  <li>mapping messages to known bot actions</li>
+  <li>sorting expenses into categories</li>
+  <li>answering read-only finance questions</li>
+  <li>generating clearer explanations</li>
+</ul>
+
+<p>
+The bot’s actual financial state and calculations still come from the app itself:
+</p>
+
+<ul>
+  <li>ledger-backed balances and transactions</li>
+  <li>SQLite data</li>
+  <li>forecast logic</li>
+  <li>recurring cashflow logic</li>
+  <li>debt logic</li>
+  <li>shared query and service-layer code</li>
+</ul>
+
+<p>
+In other words:
+</p>
+
+<ul>
+  <li><strong>AI handles interpretation</strong></li>
+  <li><strong>the bot’s code handles accounting truth</strong></li>
+</ul>
+
+<p>
+This keeps the system more predictable, auditable, and trustworthy than letting a model write directly to the database or generate raw SQL.
+</p>
+
+<hr>
+
 <h2>📊 Forecast Your Cashflow</h2>
 
 <p>Kalverion_bot simulates your future balance based on current transactions, recurring bills, and debt payments.</p>
