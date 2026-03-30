@@ -222,7 +222,7 @@ module.exports = function registerExportHistoryHandler(bot, deps) {
         const bankAmount = Number(r.bank_amount) || 0;
         const savingsAmount = Number(r.savings_amount) || 0;
         const transactionType = detectTransactionType(account);
-        const ref = String(r.hash || "").slice(0, 8);
+        const ref = `tx-${String(r.hash || "").slice(0, 8)}`;
 
         return [
           r.date,
