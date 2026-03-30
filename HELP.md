@@ -68,7 +68,7 @@ These commands answer the most common financial questions quickly.
 | `/money`          | Financial snapshot                                                             | `/money`                    |
 | `/transfer`       | Move money between `bank` and `savings`                                        | `/transfer 89 savings bank` |
 | `/reconcile`      | Reconcile `bank` or `savings` to a real balance by posting an adjustment entry | `/reconcile bank 1234.56`   |
-| `/export_history` | Export the last 90 days of transaction history as CSV for Google Sheets        | `/export_history`           |
+| `/export_history` | Export recent transaction history as CSV for Google Sheets                     | `/export_history 90`        |
 
 ---
 

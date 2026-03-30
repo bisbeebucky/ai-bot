@@ -5,19 +5,28 @@ const path = require("path");
 module.exports = function registerExportHistoryHandler(bot, deps) {
   const { db } = deps;
 
+  const DEFAULT_DAYS = 90;
+  const MIN_DAYS = 1;
+  const MAX_DAYS = 365;
+
   function renderHelp() {
     return [
       "*\\/export_history*",
-      "Export the last 90 days of transaction history as a CSV file for Google Sheets or spreadsheets.",
+      "Export recent transaction history as a CSV file for Google Sheets or spreadsheets.",
       "",
       "*Usage*",
       "- `/export_history`",
+      "- `/export_history <days>`",
       "",
       "*Examples*",
       "- `/export_history`",
+      "- `/export_history 30`",
+      "- `/export_history 90`",
+      "- `/export_history 180`",
       "",
       "*Notes*",
-      "- Exports the last 90 days only.",
+      `- Defaults to the last ${DEFAULT_DAYS} days.`,
+      `- Supports ${MIN_DAYS}-${MAX_DAYS} days.`,
       "- Sends a CSV file that can be imported into Google Sheets.",
       "- Includes a short transaction reference that matches `/history` and `/undo` style.",
     ].join("\n");
@@ -59,21 +68,41 @@ module.exports = function registerExportHistoryHandler(bot, deps) {
     const chatId = msg.chat.id;
     const raw = String(match?.[1] || "").trim();
 
+    let days = DEFAULT_DAYS;
+
     if (raw) {
       if (/^(help|--help|-h)$/i.test(raw)) {
         return sendHelp(chatId);
       }
 
-      return bot.sendMessage(
-        chatId,
-        [
-          "The `/export_history` command does not take arguments.",
-          "",
-          "Usage:",
-          "`/export_history`",
-        ].join("\n"),
-        { parse_mode: "Markdown" },
-      );
+      if (!/^\d+$/.test(raw)) {
+        return bot.sendMessage(
+          chatId,
+          [
+            "Usage:",
+            "`/export_history`",
+            "`/export_history <days>`",
+            "",
+            `Examples: \`/export_history 30\`, \`/export_history ${DEFAULT_DAYS}\``,
+          ].join("\n"),
+          { parse_mode: "Markdown" },
+        );
+      }
+
+      days = Number(raw);
+
+      if (!Number.isInteger(days) || days < MIN_DAYS || days > MAX_DAYS) {
+        return bot.sendMessage(
+          chatId,
+          [
+            `Days must be between ${MIN_DAYS} and ${MAX_DAYS}.`,
+            "",
+            "Usage:",
+            "`/export_history <days>`",
+          ].join("\n"),
+          { parse_mode: "Markdown" },
+        );
+      }
     }
 
     try {
@@ -174,16 +203,16 @@ module.exports = function registerExportHistoryHandler(bot, deps) {
           ) AS savings_amount
 
         FROM transactions t
-        WHERE date(t.date) >= date('now', '-90 days')
+        WHERE date(t.date) >= date('now', ?)
         ORDER BY date(t.date) DESC, t.id DESC
       `,
         )
-        .all();
+        .all(`-${days} days`);
 
       if (!rows.length) {
         return bot.sendMessage(
           chatId,
-          "No transactions found in the last 90 days.",
+          `No transactions found in the last ${days} days.`,
         );
       }
 
@@ -224,13 +253,13 @@ module.exports = function registerExportHistoryHandler(bot, deps) {
       const stamp = new Date().toISOString().slice(0, 10);
       const filePath = path.join(
         os.tmpdir(),
-        `kalverion_history_90d_${stamp}.csv`,
+        `kalverion_history_${days}d_${stamp}.csv`,
       );
 
       fs.writeFileSync(filePath, csv, "utf8");
 
       await bot.sendDocument(chatId, filePath, {
-        caption: "Last 90 days of transaction history (CSV)",
+        caption: `Last ${days} days of transaction history (CSV)`,
       });
 
       try {
@@ -248,11 +277,17 @@ module.exports = function registerExportHistoryHandler(bot, deps) {
 module.exports.help = {
   command: "export_history",
   category: "Reporting",
-  summary: "Export the last 90 days of transaction history as CSV.",
-  usage: ["/export_history"],
-  examples: ["/export_history"],
+  summary: "Export recent transaction history as CSV.",
+  usage: ["/export_history", "/export_history <days>"],
+  examples: [
+    "/export_history",
+    "/export_history 30",
+    "/export_history 90",
+    "/export_history 180",
+  ],
   notes: [
-    "Exports the last 90 days only.",
+    "Defaults to the last 90 days.",
+    "Supports 1-365 days.",
     "Sends a CSV file that can be imported into Google Sheets.",
     "Includes a short transaction reference that matches `/history` and `/undo` style.",
   ],
