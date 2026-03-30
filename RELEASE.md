@@ -153,3 +153,58 @@ This release standardizes the bot on **OpenRouter only**.
 - runtime model selection is now consistent across the bot
 - `/ocstatus` reports the same requested model the bot uses
 - OpenRouter-only deployments are simpler and more predictable
+
+## Command surface and cockpit cleanup
+
+This release continues the shift from a large command set toward a clearer Telegram financial cockpit.
+
+### Changes
+
+- removed overlapping commands that had been replaced by stronger cockpit commands
+- folded detail-style commands into their parent commands where appropriate
+- improved `/help` and `HELP.md` so the most important commands are easier to discover
+- strengthened the bot’s core command flow around:
+  - `/status`
+  - `/untilpayday`
+  - `/why`
+  - `/focus`
+  - `/autopilot`
+  - `/forecast_graph`
+
+### Result
+
+- the command surface is smaller and easier to understand
+- the core day-to-day workflow is clearer on mobile
+- users are guided toward the most useful “what now?” commands instead of a large command list
+
+## Reconciliation support
+
+This release adds a safer way to realign the bot with real account balances when drift happens.
+
+### Changes
+
+- added `/reconcile` for `bank` and `savings`
+- reconciliation posts an explicit adjustment entry instead of silently overwriting balances
+- added inline confirmation buttons before applying the adjustment
+
+### Result
+
+- users can recover trust in balances after drift or missed entries
+- reconciliation remains ledger-backed and auditable
+- the bot is better suited for real-world daily use
+
+## CSV export for spreadsheet use
+
+This release adds a simple spreadsheet-friendly export for recent transaction history.
+
+### Changes
+
+- added `/export_history` to export the last 90 days of transaction history as CSV
+- formatted the export for Google Sheets and spreadsheet use
+- included a short transaction reference that matches the bot’s `/history` and `/undo` style
+
+### Result
+
+- users can review recent transactions outside Telegram
+- transaction history is easier to sort, filter, chart, and audit in Google Sheets
+- exports stay compact and practical for day-to-day use
