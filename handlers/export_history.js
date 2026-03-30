@@ -19,6 +19,7 @@ module.exports = function registerExportHistoryHandler(bot, deps) {
       "*Notes*",
       "- Exports the last 90 days only.",
       "- Sends a CSV file that can be imported into Google Sheets.",
+      "- Includes a short transaction reference that matches `/history` and `/undo` style.",
     ].join("\n");
   }
 
@@ -192,11 +193,12 @@ module.exports = function registerExportHistoryHandler(bot, deps) {
         const bankAmount = Number(r.bank_amount) || 0;
         const savingsAmount = Number(r.savings_amount) || 0;
         const transactionType = detectTransactionType(account);
+        const ref = String(r.hash || "").slice(0, 8);
 
         return [
           r.date,
           r.description,
-          r.hash || "",
+          ref,
           amount,
           account,
           bankAmount,
@@ -209,7 +211,7 @@ module.exports = function registerExportHistoryHandler(bot, deps) {
         [
           "date",
           "description",
-          "hash",
+          "ref",
           "amount",
           "account",
           "bank_amount",
@@ -252,5 +254,6 @@ module.exports.help = {
   notes: [
     "Exports the last 90 days only.",
     "Sends a CSV file that can be imported into Google Sheets.",
+    "Includes a short transaction reference that matches `/history` and `/undo` style.",
   ],
 };
