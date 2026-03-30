@@ -13,11 +13,11 @@ Examples:
 
 /add groceries 25  
 or  
-bought groceries for 25  
+bought groceries for 25
 
 /deposit 500 paycheck  
 or  
-I got paid 500 
+I got paid 500
 
 ---
 
@@ -37,153 +37,155 @@ Quick start:
 
 These commands answer the most common financial questions quickly.
 
-| Question | Command |
-|--------|--------|
-| How much money do I have right now? | `/money` |
-| What is my overall financial picture right now? | `/status` |
-| How tight will things get before payday? | `/untilpayday` |
-| Why does my balance dip? | `/why` |
-| What should I focus on right now? | `/focus` |
-| What does the bot recommend I do next? | `/autopilot` |
-| What will my balance look like soon? | `/forecast_graph` |
+| Question                                        | Command           |
+| ----------------------------------------------- | ----------------- |
+| How much money do I have right now?             | `/money`          |
+| What is my overall financial picture right now? | `/status`         |
+| How tight will things get before payday?        | `/untilpayday`    |
+| Why does my balance dip?                        | `/why`            |
+| What should I focus on right now?               | `/focus`          |
+| What does the bot recommend I do next?          | `/autopilot`      |
+| What will my balance look like soon?            | `/forecast_graph` |
 
 ---
 
 # Basic Accounting
 
-| Command | Description | Example |
-|-------|-------------|--------|
-| `/add` | Add an expense | `/add groceries 25` |
-| `/deposit` | Add money to bank | `/deposit 500 paycheck` |
-| `/withdraw` | Remove money from bank | `/withdraw 50 cash` |
-| `/balance` | Show bank balance | `/balance` |
-| `/balance_on` | Estimate your `assets:bank` balance on a future date | `/balance_on <YYYY-MM-DD>` |
-| `/save` | Save money to savings | `/save 50` |
-| `/savings` | Show bank savings balance | `/savings` |
-| `/accounts` | List account balances | `/accounts` |
-| `/networth` | Show assets minus liabilities | `/networth` |
-| `/history` | Show recent transactions | `/history` |
-| `/undo` | Remove last transaction | `/undo` |
-| `/status` | Compact financial status snapshot | `/status` |
-| `/money` | Financial snapshot | `/money` |
-| `/transfer` | Move money between `bank` and `savings` | `/transfer 89 savings bank` |
-| `/reconcile` | Reconcile `bank` or `savings` to a real balance by posting an adjustment entry | `/reconcile bank 1234.56` |
+| Command           | Description                                                                    | Example                     |
+| ----------------- | ------------------------------------------------------------------------------ | --------------------------- |
+| `/add`            | Add an expense                                                                 | `/add groceries 25`         |
+| `/deposit`        | Add money to bank                                                              | `/deposit 500 paycheck`     |
+| `/withdraw`       | Remove money from bank                                                         | `/withdraw 50 cash`         |
+| `/balance`        | Show bank balance                                                              | `/balance`                  |
+| `/balance_on`     | Estimate your `assets:bank` balance on a future date                           | `/balance_on <YYYY-MM-DD>`  |
+| `/save`           | Save money to savings                                                          | `/save 50`                  |
+| `/savings`        | Show bank savings balance                                                      | `/savings`                  |
+| `/accounts`       | List account balances                                                          | `/accounts`                 |
+| `/networth`       | Show assets minus liabilities                                                  | `/networth`                 |
+| `/history`        | Show recent transactions                                                       | `/history`                  |
+| `/undo`           | Remove last transaction                                                        | `/undo`                     |
+| `/status`         | Compact financial status snapshot                                              | `/status`                   |
+| `/money`          | Financial snapshot                                                             | `/money`                    |
+| `/transfer`       | Move money between `bank` and `savings`                                        | `/transfer 89 savings bank` |
+| `/reconcile`      | Reconcile `bank` or `savings` to a real balance by posting an adjustment entry | `/reconcile bank 1234.56`   |
+| `/export_history` | Export the last 90 days of transaction history as CSV for Google Sheets        | `/export_history`           |
 
 ---
 
 # Financial Planning
 
-| Command | Description | Example |
-|---------|-------------|---------|
-| `/money_graph` | Graph of bank, debt, and net worth projection | `/money_graph` |
-| `/future_graph` | Financial projection graph | `/future_graph 24` |
-| `/milestones` | Key financial milestones | `/milestones` |
-| `/milestones_graph` | Visual timeline of milestones | `/milestones_graph` |
-| `/rich` | Long-term wealth timeline ($50k → $1M) | `/rich` |
-| `/timeline` | Full money roadmap from now to major milestones | `/timeline` |
+| Command             | Description                                     | Example             |
+| ------------------- | ----------------------------------------------- | ------------------- |
+| `/money_graph`      | Graph of bank, debt, and net worth projection   | `/money_graph`      |
+| `/future_graph`     | Financial projection graph                      | `/future_graph 24`  |
+| `/milestones`       | Key financial milestones                        | `/milestones`       |
+| `/milestones_graph` | Visual timeline of milestones                   | `/milestones_graph` |
+| `/rich`             | Long-term wealth timeline ($50k → $1M)          | `/rich`             |
+| `/timeline`         | Full money roadmap from now to major milestones | `/timeline`         |
 
 ---
 
 # Planning Tools
 
-| Command | Description | Example |
-|---------|-------------|---------|
-| `/focus` | Compact current financial priority | `/focus` |
-| `/autopilot` | Full recommendation with why, do now, and watch next | `/autopilot` |
+| Command             | Description                                            | Example             |
+| ------------------- | ------------------------------------------------------ | ------------------- |
+| `/focus`            | Compact current financial priority                     | `/focus`            |
+| `/autopilot`        | Full recommendation with why, do now, and watch next   | `/autopilot`        |
 | `/financial_health` | Financial scorecard with health label, drag, and focus | `/financial_health` |
-| `/emergency_fund` | Emergency fund target analysis | `/emergency_fund` |
-| `/goal` | Savings goal calculator | `/goal 5000` |
+| `/emergency_fund`   | Emergency fund target analysis                         | `/emergency_fund`   |
+| `/goal`             | Savings goal calculator                                | `/goal 5000`        |
 
 ---
 
 # Forecasting
 
-| Command | Description | Example |
-|-------|-------------|--------|
-| `/forecast` | Text forecast of upcoming balance changes | `/forecast` |
-| `/forecast_graph` | 30-day balance projection chart | `/forecast_graph` |
-| `/endmonth` | Project balance after the next 30 days of recurring income and bills | `/endmonth` |
-| `/whatif` | Simulate balance with a hypothetical spend | `/whatif 50` |
-| `/upcoming` | Show upcoming recurring events | `/upcoming bill 60 25` |
-| `/year_projection` | 12-month projection using recurring cashflow | `/year_projection` |
-| `/dashboard_graph` | Visual dashboard of bank, debt and net worth | `/dashboard_graph 60` |
-| `/life_projection` | Long-term projection with debt-free and FI estimates | `/life_projection` |
-| `/runway` | Cashflow runway based on recent income, expenses, and recurring net | `/runway` |
-| `/untilpayday` | Show how tight things get before your next income arrives | `/untilpayday` |
-| `/why` | Explain which upcoming expenses drive your lowest projected balance | `/why` |
+| Command            | Description                                                          | Example                |
+| ------------------ | -------------------------------------------------------------------- | ---------------------- |
+| `/forecast`        | Text forecast of upcoming balance changes                            | `/forecast`            |
+| `/forecast_graph`  | 30-day balance projection chart                                      | `/forecast_graph`      |
+| `/endmonth`        | Project balance after the next 30 days of recurring income and bills | `/endmonth`            |
+| `/whatif`          | Simulate balance with a hypothetical spend                           | `/whatif 50`           |
+| `/upcoming`        | Show upcoming recurring events                                       | `/upcoming bill 60 25` |
+| `/year_projection` | 12-month projection using recurring cashflow                         | `/year_projection`     |
+| `/dashboard_graph` | Visual dashboard of bank, debt and net worth                         | `/dashboard_graph 60`  |
+| `/life_projection` | Long-term projection with debt-free and FI estimates                 | `/life_projection`     |
+| `/runway`          | Cashflow runway based on recent income, expenses, and recurring net  | `/runway`              |
+| `/untilpayday`     | Show how tight things get before your next income arrives            | `/untilpayday`         |
+| `/why`             | Explain which upcoming expenses drive your lowest projected balance  | `/why`                 |
 
 ---
 
 # Recurring Transactions
 
-| Command | Description | Example |
-|-------|-------------|--------|
-| `/recurring` | Add recurring bill | `/recurring rent 1200 monthly 1` |
-| `/recurring_income` | Add recurring income | `/recurring_income salary 2500 monthly 1` |
-| `/recurring_list` | List recurring items | `/recurring_list` |
-| `/recurring_delete` | Delete recurring item | `/recurring_delete 3` |
-| `/recurring_shift` | Shift the next due date of a recurring item | `/recurring_shift <id> <YYYY-MM-DD>` |
-| `/runrecurring` | Run recurring transactions now | `/runrecurring` |
+| Command             | Description                                 | Example                                   |
+| ------------------- | ------------------------------------------- | ----------------------------------------- |
+| `/recurring`        | Add recurring bill                          | `/recurring rent 1200 monthly 1`          |
+| `/recurring_income` | Add recurring income                        | `/recurring_income salary 2500 monthly 1` |
+| `/recurring_list`   | List recurring items                        | `/recurring_list`                         |
+| `/recurring_delete` | Delete recurring item                       | `/recurring_delete 3`                     |
+| `/recurring_shift`  | Shift the next due date of a recurring item | `/recurring_shift <id> <YYYY-MM-DD>`      |
+| `/runrecurring`     | Run recurring transactions now              | `/runrecurring`                           |
 
 ---
 
 # Monthly Reports
 
-| Command | Description | Example |
-|-------|-------------|--------|
-| `/monthly` | This month's income, expenses, and net; use detail for breakdown | `/monthly detail` |
-| `/cashflow` | Recurring monthly income vs bills; use `detail` for line items | `/cashflow detail` |
-| `/summary` | Show where your last 30 days of spending went by category | `/summary` |
-| `/risk` | Calculate a financial risk score based on cashflow, savings, and debt | `/risk` |
-| `/burn` | Estimate burn and runway using recurring cashflow plus recent 30-day trends | `/burn` |
-| `/budget` | Budget versus actual spending (30 days) | `/budget` |
-| `/budget_set` | Set a category budget | `/budget_set food 1000` |
-| `/budget_list` | List saved budgets | `/budget_list` |
-| `/budget_delete` | Delete a category budget | `/budget_delete food` |
+| Command          | Description                                                                 | Example                 |
+| ---------------- | --------------------------------------------------------------------------- | ----------------------- |
+| `/monthly`       | This month's income, expenses, and net; use detail for breakdown            | `/monthly detail`       |
+| `/cashflow`      | Recurring monthly income vs bills; use `detail` for line items              | `/cashflow detail`      |
+| `/summary`       | Show where your last 30 days of spending went by category                   | `/summary`              |
+| `/risk`          | Calculate a financial risk score based on cashflow, savings, and debt       | `/risk`                 |
+| `/burn`          | Estimate burn and runway using recurring cashflow plus recent 30-day trends | `/burn`                 |
+| `/budget`        | Budget versus actual spending (30 days)                                     | `/budget`               |
+| `/budget_set`    | Set a category budget                                                       | `/budget_set food 1000` |
+| `/budget_list`   | List saved budgets                                                          | `/budget_list`          |
+| `/budget_delete` | Delete a category budget                                                    | `/budget_delete food`   |
 
 ---
 
 # Debt Analysis
 
-| Command | Description | Example |
-|---------|-------------|---------|
+| Command                     | Description                                         | Example                     |
+| --------------------------- | --------------------------------------------------- | --------------------------- |
 | `/debt_compare_range_graph` | Compare snowball vs avalanche across payment ranges | `/debt_compare_range_graph` |
-| `/best_extra` | Find the most effective extra payment | `/best_extra 100 500 100` |
+| `/best_extra`               | Find the most effective extra payment               | `/best_extra 100 500 100`   |
 
 ---
 
 # Debt Management
 
-| Command | Description | Example |
-|-------|-------------|--------|
-| `/debt_add` | Add a debt | `/debt_add chase 5400 21.9 125` |
-| `/debt_edit` | Edit balance, APR, or minimum | `/debt_edit chase apr 19.9` |
-| `/debt_pay` | Apply payment to a debt | `/debt_pay chase 200` |
-| `/debts_list` | List all debts | `/debts_list` |
-| `/debt_total` | Show total debt summary | `/debt_total` |
-| `/debt_strategy` | Show payoff order | `/debt_strategy avalanche` |
-| `/debt_plan` | Show payment plan with extra payment | `/debt_plan avalanche 300` |
-| `/debt_sim` | Full payoff simulation | `/debt_sim avalanche 300` |
-| `/debt_compare` | Compare snowball vs avalanche | `/debt_compare 300` |
-| `/debt_graph` | Graph debt payoff | `/debt_graph avalanche 300` |
-| `/debt_compare_graph` | Graph strategy comparison | `/debt_compare_graph 300` |
+| Command               | Description                          | Example                         |
+| --------------------- | ------------------------------------ | ------------------------------- |
+| `/debt_add`           | Add a debt                           | `/debt_add chase 5400 21.9 125` |
+| `/debt_edit`          | Edit balance, APR, or minimum        | `/debt_edit chase apr 19.9`     |
+| `/debt_pay`           | Apply payment to a debt              | `/debt_pay chase 200`           |
+| `/debts_list`         | List all debts                       | `/debts_list`                   |
+| `/debt_total`         | Show total debt summary              | `/debt_total`                   |
+| `/debt_strategy`      | Show payoff order                    | `/debt_strategy avalanche`      |
+| `/debt_plan`          | Show payment plan with extra payment | `/debt_plan avalanche 300`      |
+| `/debt_sim`           | Full payoff simulation               | `/debt_sim avalanche 300`       |
+| `/debt_compare`       | Compare snowball vs avalanche        | `/debt_compare 300`             |
+| `/debt_graph`         | Graph debt payoff                    | `/debt_graph avalanche 300`     |
+| `/debt_compare_graph` | Graph strategy comparison            | `/debt_compare_graph 300`       |
 
 ---
 
 # Retirement / FI
 
-| Command | Description | Example |
-|-------|-------------|--------|
-| `/retirement` | Retirement target projection; use `fi` for financial independence mode | `/retirement 500 7 1000000` |
-| `/retirement_auto` | Retirement projection using recurring surplus | `/retirement_auto 7 1000000` |
+| Command            | Description                                                            | Example                      |
+| ------------------ | ---------------------------------------------------------------------- | ---------------------------- |
+| `/retirement`      | Retirement target projection; use `fi` for financial independence mode | `/retirement 500 7 1000000`  |
+| `/retirement_auto` | Retirement projection using recurring surplus                          | `/retirement_auto 7 1000000` |
+
 ---
 
 # Runtime / Admin
 
-| Command | Description | Example |
-|-------|-------------|--------|
+| Command      | Description              | Example      |
+| ------------ | ------------------------ | ------------ |
 | `/botstatus` | Local bot runtime status | `/botstatus` |
-| `/ocstatus` | OpenClaw runtime status | `/ocstatus` |
+| `/ocstatus`  | OpenClaw runtime status  | `/ocstatus`  |
 
 ---
 
